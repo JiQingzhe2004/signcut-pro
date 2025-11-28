@@ -1,10 +1,10 @@
-
 import React, { useState, useEffect } from 'react';
 import { processSignatureRegions } from './services/imageProcessing';
 import { ProcessedSignature, ProcessingStatus, SelectionBox, Theme } from './types';
 import { Button } from './components/Button';
 import { SignatureCard } from './components/SignatureCard';
 import { ImageEditor } from './components/ImageEditor';
+import { Logo } from './components/Logo';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<ProcessingStatus>(ProcessingStatus.IDLE);
@@ -203,13 +203,6 @@ const App: React.FC = () => {
     ? 'border-b border-slate-800 bg-slate-950/80 backdrop-blur-md'
     : 'border-b border-white/50 bg-white/70 backdrop-blur-xl shadow-sm';
 
-  const logoBoxClass = isCyber
-    ? 'bg-cyan-500/10 border border-cyan-500/50 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.2)] rounded-lg'
-    : 'bg-black text-white rounded-full shadow-lg';
-
-  const logoTextMain = isCyber ? 'text-slate-100 font-mono' : 'text-slate-900 font-sans tracking-tight';
-  const logoTextAccent = isCyber ? 'text-cyan-500' : 'text-blue-600 font-bold';
-
   const toolbarClass = isCyber
     ? 'bg-slate-900/80 backdrop-blur border border-slate-800 shadow-2xl rounded-2xl'
     : 'bg-white/70 backdrop-blur-xl border border-white/60 shadow-xl rounded-[2rem] shadow-slate-200/50';
@@ -240,13 +233,8 @@ const App: React.FC = () => {
           className={`${headerClass} sticky top-0 z-50 transition-transform duration-500 ease-in-out ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}
         >
           <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
-            <div className="flex items-center gap-4 cursor-pointer group" onClick={handleReset}>
-              <div className={`w-10 h-10 flex items-center justify-center font-bold text-lg transition-all ${logoBoxClass}`}>
-                S
-              </div>
-              <h1 className={`font-bold text-xl ${logoTextMain}`}>
-                赛博签 <span className={logoTextAccent}>PRO</span>
-              </h1>
+            <div className="cursor-pointer group" onClick={handleReset}>
+              <Logo theme={theme} />
             </div>
             
             <div className="flex items-center gap-4">

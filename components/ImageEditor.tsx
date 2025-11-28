@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { SelectionBox, Theme } from '../types';
 import { Button } from './Button';
+import { Logo } from './Logo';
 
 interface ImageEditorProps {
   imageUrl: string;
@@ -198,18 +199,12 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
         const diffLeft = Math.abs(snappedLeft - rawX);
         const diffRight = Math.abs(snappedRightX - rawX);
         
-        // Use the closer snap, provided it changed (diff < threshold is handled inside getSnappedValue logic effectively)
-        // Note: getSnappedValue returns 'currentVal' if no snap found, so diff is 0 if no snap.
-        // But if both snap, pick closer. If only one snaps, pick that one.
         let finalX = rawX;
         if (Math.abs(snappedLeft - rawX) < 0.01 && Math.abs(snappedRightX - rawX) > 0.01) {
-             // Only Left matched (technically) or Left matched "better"
              finalX = snappedLeft;
         } else if (Math.abs(snappedRightX - rawX) < 0.01 && Math.abs(snappedLeft - rawX) > 0.01) {
              finalX = snappedRightX;
         } else {
-             // Compare distances to snap points from original raw pos
-             // We need to re-run check against threshold to be sure which one triggered
              const isLeftSnap = Math.abs(snappedLeft - rawX) < SNAP_THRESHOLD;
              const isRightSnap = Math.abs((snappedRightX + width) - (rawX + width)) < SNAP_THRESHOLD;
 
@@ -268,10 +263,6 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
         }
         if (activeHandle.includes('w')) {
             const snappedLeft = getSnappedValue(x, vTargets);
-            const oldRight = x + width; // Keep right side static-ish logic handled by algebra
-            // w = oldRight - newX
-            // But we modified X and W above. 
-            // Better to snap 'x' then recalc width.
             const diff = snappedLeft - x;
             x = snappedLeft;
             width -= diff; 
@@ -357,23 +348,32 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   return (
     <div className={`flex flex-col h-full animate-fade-in ${containerBgClass}`}>
       
-      {/* Floating Toolbar */}
-      <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-4xl px-4`}>
+      {/* Floating Toolbar / Header */}
+      <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-6xl px-4 lg:px-6`}>
         <div className={`${toolbarClass} p-4 flex flex-wrap items-center justify-between gap-4`}>
-           <div className="flex items-center gap-4">
-             <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold ${isCyber ? 'bg-cyan-900 text-cyan-400' : 'bg-blue-100 text-blue-600'}`}>
-                {boxes.length}
-             </div>
-             <div>
-               <h3 className={`text-sm ${titleClass}`}>
-                 {isCyber ? '目标锁定系统' : '区域选择编辑器'}
-               </h3>
-               <p className={`text-[10px] ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400'}`}>
-                 {isPreviewMode ? '预览模式 / PREVIEW MODE' : (isCyber ? '拖拽框选签名区域' : '请框选图片中的签名')}
-               </p>
+           
+           {/* Left: Branding & Stats */}
+           <div className="flex items-center gap-6">
+             <Logo theme={theme} collapsed={true} />
+             
+             <div className="h-8 w-px bg-current opacity-10"></div>
+             
+             <div className="flex items-center gap-3">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm ${isCyber ? 'bg-cyan-900 text-cyan-400' : 'bg-blue-100 text-blue-600'}`}>
+                  {boxes.length}
+                </div>
+                <div className="hidden sm:block">
+                  <h3 className={`text-sm leading-tight ${titleClass}`}>
+                    {isCyber ? '目标锁定系统' : '选择签名区域'}
+                  </h3>
+                  <p className={`text-[10px] ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400'}`}>
+                    {isPreviewMode ? 'PREVIEW MODE' : 'DRAG TO SELECT'}
+                  </p>
+                </div>
              </div>
            </div>
 
+           {/* Right: Controls */}
            <div className="flex items-center gap-3">
              <button 
                onClick={() => setIsPreviewMode(!isPreviewMode)}
@@ -389,17 +389,17 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
              
              {!isPreviewMode && boxes.length > 0 && (
                <Button variant="danger" onClick={handleClear} className="text-xs px-3" theme={theme}>
-                 {isCyber ? '清除全部' : '清空'}
+                 {isCyber ? '清除' : '清空'}
                </Button>
              )}
              
              <div className={`h-6 w-px mx-2 ${isCyber ? 'bg-slate-700' : 'bg-slate-300'}`}></div>
 
              <Button variant="ghost" onClick={onCancel} className="text-xs px-3" theme={theme}>
-               {isCyber ? '取消操作' : '取消'}
+               取消
              </Button>
-             <Button onClick={() => onConfirm(boxes)} className="text-xs px-4" theme={theme}>
-               {boxes.length === 0 ? (isCyber ? '全图处理' : '处理整张图片') : (isCyber ? '确认提取' : '确认选择')}
+             <Button onClick={() => onConfirm(boxes)} className="text-xs px-4 min-w-[100px]" theme={theme}>
+               {boxes.length === 0 ? '全图处理' : (isCyber ? '确认提取' : '确认选择')}
              </Button>
            </div>
         </div>
