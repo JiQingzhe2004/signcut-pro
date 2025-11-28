@@ -1,0 +1,7 @@
+{
+  "name": "SignCut Pro - 电子签名制作",
+  "description": "自动识别照片中的手写签名，去除背景阴影，生成纯白底黑字的电子签名（15:30 比例）。",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
