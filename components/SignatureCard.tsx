@@ -93,14 +93,14 @@ export const SignatureCard: React.FC<SignatureCardProps> = ({
            <img 
             src={signature.processedDataUrl} 
             alt={`Signature ${index + 1}`}
-            className={`max-w-full h-auto bg-white z-10 transition-all duration-300 transform group-hover:scale-105 ${isUpdating ? 'opacity-80' : 'opacity-100'} ${isCyber ? 'border border-white/10 shadow-[0_0_30px_rgba(0,0,0,0.5)] rounded-lg' : 'rounded-xl shadow-sm'}`}
+            className={`max-w-full h-auto bg-white relative z-0 transition-all duration-300 transform group-hover:scale-105 ${isUpdating ? 'opacity-80' : 'opacity-100'} ${isCyber ? 'border border-white/10 shadow-[0_0_30px_rgba(0,0,0,0.5)] rounded-lg' : 'rounded-xl shadow-sm'}`}
             style={{ 
               aspectRatio: `${signature.width}/${signature.height}`
             }}
           />
           
-          {/* Hover Hint */}
-          <div className={`absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none`}>
+          {/* Hover Hint - 确保在图片上层 */}
+          <div className={`absolute bottom-3 right-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none`}>
             <div className={`p-1.5 rounded-full ${isCyber ? 'bg-cyan-500/20 text-cyan-400 backdrop-blur' : 'bg-black/10 text-slate-600 backdrop-blur'}`}>
                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
@@ -133,7 +133,10 @@ export const SignatureCard: React.FC<SignatureCardProps> = ({
       {/* Full Screen Preview Modal */}
       {isPreviewOpen && (
         <div 
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md animate-fade-in cursor-zoom-out"
+          className="fixed inset-0 z-[100] flex items-center justify-center backdrop-blur-sm cursor-zoom-out animate-fade-in"
+          style={{
+            backgroundColor: isCyber ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.35)'
+          }}
           onClick={(e) => {
             e.stopPropagation();
             setIsPreviewOpen(false);
@@ -142,31 +145,47 @@ export const SignatureCard: React.FC<SignatureCardProps> = ({
           {/* Close Button */}
           <button 
             onClick={() => setIsPreviewOpen(false)}
-            className="absolute top-8 right-8 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all z-[101] group/close"
+            className={`absolute top-8 right-8 p-2 rounded-full transition-all duration-300 z-[101] group/close ${
+              isCyber 
+                ? 'bg-slate-800/80 hover:bg-slate-700/80 text-cyan-400 border border-cyan-500/30' 
+                : 'bg-white/90 hover:bg-white text-slate-800 shadow-lg'
+            }`}
           >
-            <svg className="w-8 h-8 group-hover/close:rotate-90 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-6 h-6 group-hover/close:rotate-90 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
 
           {/* Image Container */}
           <div 
-            className="relative max-w-[90vw] max-h-[85vh] p-1"
+            className="relative max-w-[90vw] max-h-[85vh] p-1 animate-zoom-in"
             onClick={(e) => e.stopPropagation()} 
           >
             <img 
               src={signature.processedDataUrl} 
               alt="Full Preview" 
-              className={`max-w-full max-h-[80vh] object-contain select-none shadow-2xl ${isCyber ? 'drop-shadow-[0_0_50px_rgba(6,182,212,0.3)]' : 'drop-shadow-[0_0_50px_rgba(255,255,255,0.3)]'}`}
+              className={`max-w-full max-h-[80vh] object-contain select-none shadow-2xl rounded-lg ${
+                isCyber 
+                  ? 'drop-shadow-[0_0_50px_rgba(6,182,212,0.3)] border border-cyan-500/20' 
+                  : 'drop-shadow-[0_0_50px_rgba(0,0,0,0.3)]'
+              }`}
             />
             {signature.annotation && (
-               <div className={`mt-6 text-center`}>
-                  <span className={`inline-block px-6 py-2 rounded-full backdrop-blur-md font-medium text-lg tracking-wide border ${isCyber ? 'bg-cyan-950/50 border-cyan-500/30 text-cyan-400 font-mono' : 'bg-white/20 border-white/20 text-white font-sans'}`}>
+               <div className="mt-6 text-center animate-fade-in">
+                  <span className={`inline-block px-6 py-2 rounded-full backdrop-blur-md font-medium text-lg tracking-wide border ${
+                    isCyber 
+                      ? 'bg-cyan-950/50 border-cyan-500/30 text-cyan-400 font-mono' 
+                      : 'bg-white/90 border-slate-200 text-slate-800 font-sans shadow-lg'
+                  }`}>
                     {signature.annotation}
                   </span>
                </div>
             )}
-            <div className={`mt-4 text-center text-xs opacity-50 ${isCyber ? 'text-cyan-200 font-mono' : 'text-white font-sans'}`}>
+            <div className={`mt-4 text-center text-xs ${
+              isCyber 
+                ? 'text-cyan-200 font-mono' 
+                : 'text-slate-600 font-sans'
+            }`}>
                {signature.width}px × {signature.height}px
             </div>
           </div>

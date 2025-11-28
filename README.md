@@ -1,20 +1,127 @@
+# SignCut Pro - 数字签名提取转换系统
+
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+  <h3>智能识别 · 纯净输出</h3>
+  <p>上传手写照片，选择签名区域，一键生成透明底电子签名</p>
 </div>
 
-# Run and deploy your AI Studio app
+## ✨ 功能特性
 
-This contains everything you need to run your app locally.
+- 🖼️ **智能图像处理**：基于 OpenCV 的签名区域检测和处理
+- 🎨 **双主题模式**：支持 iOS 风格和赛博朋克风格主题切换
+- ✂️ **精确选区**：可视化编辑器，支持手动框选和调整签名区域
+- 🎯 **参数调节**：可调节提取阈值和输出尺寸
+- 💾 **批量下载**：支持批量保存处理后的签名图片
+- 📝 **备注管理**：为每个签名添加备注名称
 
-View your app in AI Studio: https://ai.studio/apps/drive/1IWHDlZgCcmycPrKhnznB1JEy4jNbHTM8
+## 🚀 快速开始
 
-## Run Locally
+### 环境要求
 
-**Prerequisites:**  Node.js
+- Node.js 18+ 
+- npm 或 yarn
 
+### 安装步骤
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+1. **克隆项目**
+   ```bash
+   git clone <repository-url>
+   cd my-signcut-folder
+   ```
+
+2. **安装依赖**
+   ```bash
+   npm install
+   ```
+
+3. **配置环境变量**（可选）
+   
+   如果需要使用 AI 功能，在项目根目录创建 `.env.local` 文件：
+   ```
+   GEMINI_API_KEY=your_gemini_api_key
+   ```
+
+4. **启动开发服务器**
+   ```bash
+   npm run dev
+   ```
+
+   应用将在 `http://localhost:3000` 启动
+
+5. **构建生产版本**
+   ```bash
+   npm run build
+   ```
+
+## 📖 使用说明
+
+1. **上传图片**：点击上传区域，选择包含手写签名的图片（支持 JPG、PNG 格式）
+
+2. **选择区域**：
+   - 在编辑器中拖拽框选签名区域
+   - 可以创建多个选区
+   - 支持调整选区大小和位置
+   - 支持删除不需要的选区
+
+3. **处理图片**：点击"确认选择"按钮，系统将自动处理选中的区域
+
+4. **调整参数**：
+   - **提取阈值**：控制签名提取的敏感度（5-40）
+   - **输出尺寸**：设置生成图片的宽度和高度
+
+5. **下载保存**：
+   - 点击单个卡片的"保存图片"按钮下载单个签名
+   - 点击"全部保存"按钮批量下载所有签名
+   - 可以为每个签名添加备注名称
+
+## 🛠️ 技术栈
+
+- **前端框架**：React 19 + TypeScript
+- **构建工具**：Vite 6
+- **样式方案**：Tailwind CSS 4
+- **图像处理**：OpenCV.js
+- **UI 组件**：自定义组件库
+
+## 📁 项目结构
+
+```
+my-signcut-folder/
+├── components/          # React 组件
+│   ├── Button.tsx      # 按钮组件
+│   ├── ImageEditor.tsx # 图片编辑器
+│   ├── Logo.tsx        # Logo 组件
+│   ├── SignatureCard.tsx # 签名卡片
+│   └── SettingsModal.tsx # 设置模态框
+├── services/           # 业务逻辑服务
+│   ├── imageProcessing.ts # 图像处理
+│   ├── opencvLoader.ts    # OpenCV 加载器
+│   └── ...
+├── src/
+│   └── index.css      # Tailwind CSS 入口
+├── App.tsx            # 主应用组件
+├── index.tsx          # 入口文件
+└── vite.config.ts     # Vite 配置
+```
+
+## 🎨 主题切换
+
+应用支持两种主题模式：
+
+- **iOS 风格**：简洁优雅的现代设计
+- **赛博朋克风格**：未来感十足的科技风格
+
+点击右上角的主题切换按钮即可切换主题。
+
+## 📝 注意事项
+
+- 建议使用清晰、对比度高的签名图片以获得最佳效果
+- 输出尺寸建议根据实际使用场景设置
+- 提取阈值需要根据图片质量调整，过高或过低都可能影响效果
+
+## 📄 许可证
+
+MIT License
+
+## 🤝 贡献
+
+欢迎提交 Issue 和 Pull Request！

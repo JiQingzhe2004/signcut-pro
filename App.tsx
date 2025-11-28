@@ -11,7 +11,7 @@ const App: React.FC = () => {
   const [isRecomputing, setIsRecomputing] = useState(false); // New state for background updates
   
   const [signatures, setSignatures] = useState<ProcessedSignature[]>([]);
-  const [sensitivity, setSensitivity] = useState<number>(15);
+  const [sensitivity, setSensitivity] = useState<number>(20);
   // Default dimensions 452x224
   const [outputSize, setOutputSize] = useState<{width: number, height: number}>({ width: 452, height: 224 });
   
@@ -207,8 +207,8 @@ const App: React.FC = () => {
     ? 'bg-slate-900/80 backdrop-blur border border-slate-800 shadow-2xl rounded-2xl'
     : 'bg-white/70 backdrop-blur-xl border border-white/60 shadow-xl rounded-[2rem] shadow-slate-200/50';
 
-  // Only apply padding bottom if NOT editing to avoid scrollbars in full-screen editor
-  const layoutClass = `min-h-screen font-sans flex flex-col relative transition-colors duration-500 ${mainBgClass} ${status === ProcessingStatus.EDITING ? '' : 'pb-20'}`;
+  // Use flexbox layout to ensure footer stays at bottom
+  const layoutClass = `min-h-screen font-sans flex flex-col relative transition-colors duration-500 ${mainBgClass}`;
 
   return (
     <div className={layoutClass}>
@@ -284,7 +284,7 @@ const App: React.FC = () => {
         
           {/* Intro / Upload Section */}
           {status === ProcessingStatus.IDLE && (
-            <div className="max-w-xl mx-auto text-center mt-24 animate-fade-in">
+            <div className="max-w-xl mx-auto text-center py-12 animate-fade-in">
               {isCyber && (
                 <div className="mb-8 inline-block px-4 py-1.5 rounded-full bg-cyan-950/30 border border-cyan-900 text-cyan-400 text-xs font-mono tracking-widest uppercase shadow-[0_0_10px_rgba(6,182,212,0.1)]">
                   SYSTEM ONLINE // 系统联机
@@ -452,6 +452,17 @@ const App: React.FC = () => {
           )}
 
         </main>
+      )}
+
+      {/* Footer */}
+      {status !== ProcessingStatus.EDITING && (
+        <footer className={`w-full py-6 mt-auto z-10 relative ${isCyber ? 'border-t border-slate-800' : 'border-t border-slate-200/50'}`}>
+          <div className="max-w-6xl mx-auto px-6">
+            <p className={`text-center text-sm ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
+              © {new Date().getFullYear()} - 吉庆喆版权所有
+            </p>
+          </div>
+        </footer>
       )}
     </div>
   );

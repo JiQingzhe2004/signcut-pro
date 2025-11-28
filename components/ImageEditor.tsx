@@ -509,9 +509,9 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
       }}
       onMouseDown={onMouseDown}
     >
-      {/* Label (Outside Top) */}
+      {/* Label (Outside Top Left, right edge aligned to box left edge) */}
       <div 
-        className={`absolute -top-7 left-0 px-2 py-0.5 text-[10px] font-bold tracking-wider rounded select-none whitespace-nowrap ${labelClass}`}
+        className={`absolute -top-7 left-0 -translate-x-full px-2 py-0.5 text-[10px] font-bold tracking-wider rounded select-none whitespace-nowrap ${labelClass}`}
       >
         {isCyber ? `TARGET_${String(index + 1).padStart(2, '0')}` : `签名 ${index + 1}`}
       </div>
