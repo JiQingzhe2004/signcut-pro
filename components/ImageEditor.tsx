@@ -43,7 +43,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   
   const isCyber = theme === 'cyberpunk';
-  const SNAP_THRESHOLD = 10;
+  const SNAP_THRESHOLD = 20;
 
   // --- Helpers ---
 
