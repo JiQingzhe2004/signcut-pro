@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { processSignatureRegions } from './services/imageProcessing';
 import { ProcessedSignature, ProcessingStatus, SelectionBox, Theme } from './types';
@@ -24,6 +25,31 @@ const App: React.FC = () => {
   // Theme State
   const [theme, setTheme] = useState<Theme>('ios');
   const isCyber = theme === 'cyberpunk';
+
+  // Scroll Header State
+  const [showHeader, setShowHeader] = useState(true);
+
+  // Handle Scroll for Auto-hiding Header
+  useEffect(() => {
+    let lastScrollY = window.scrollY;
+    
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      
+      if (currentScrollY > lastScrollY && currentScrollY > 80) {
+        // Scrolling Down & past threshold -> Hide
+        setShowHeader(false);
+      } else {
+        // Scrolling Up -> Show
+        setShowHeader(true);
+      }
+      
+      lastScrollY = currentScrollY > 0 ? currentScrollY : 0;
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -210,7 +236,9 @@ const App: React.FC = () => {
 
       {/* Header */}
       {status !== ProcessingStatus.EDITING && (
-        <header className={`${headerClass} sticky top-0 z-50 transition-all duration-300`}>
+        <header 
+          className={`${headerClass} sticky top-0 z-50 transition-transform duration-500 ease-in-out ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}
+        >
           <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
             <div className="flex items-center gap-4 cursor-pointer group" onClick={handleReset}>
               <div className={`w-10 h-10 flex items-center justify-center font-bold text-lg transition-all ${logoBoxClass}`}>
@@ -329,7 +357,7 @@ const App: React.FC = () => {
           {status === ProcessingStatus.COMPLETED && (
             <div className="animate-fade-in">
               {/* Controls Toolbar */}
-              <div className={`${toolbarClass} p-5 mb-10 flex flex-wrap items-center justify-between gap-6 sticky top-28 z-20`}>
+              <div className={`${toolbarClass} p-5 mb-10 flex flex-wrap items-center justify-between gap-6 sticky z-20 transition-all duration-500 ease-in-out ${showHeader ? 'top-28' : 'top-6'}`}>
                 
                 <div className="flex flex-wrap items-center gap-8">
                   {/* Sensitivity Control */}
@@ -422,7 +450,7 @@ const App: React.FC = () => {
             <div className="text-center mt-24">
                <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-6 ${isCyber ? 'bg-red-900/20 text-red-500 border border-red-500/50' : 'bg-red-50 text-red-500'}`}>
                  <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v1m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                  </svg>
                </div>
                <h3 className={`text-xl font-bold mb-2 ${isCyber ? 'text-red-400 font-mono uppercase tracking-widest' : 'text-slate-900'}`}>
