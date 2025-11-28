@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { ProcessedSignature, Theme } from '../types';
 import { Button } from './Button';
 
@@ -7,20 +7,21 @@ interface SignatureCardProps {
   index: number;
   onUpdateAnnotation: (id: string, text: string) => void;
   theme: Theme;
+  isUpdating?: boolean;
 }
 
 export const SignatureCard: React.FC<SignatureCardProps> = ({ 
   signature, 
   index, 
   onUpdateAnnotation,
-  theme
+  theme,
+  isUpdating = false
 }) => {
-  const [currentImage] = useState(signature.processedDataUrl);
   const isCyber = theme === 'cyberpunk';
 
   const handleDownload = () => {
     const link = document.createElement('a');
-    link.href = currentImage;
+    link.href = signature.processedDataUrl;
     const name = signature.annotation ? signature.annotation : `签名_${index + 1}`;
     link.download = `电子签名_${name}_${signature.width}x${signature.height}.png`;
     document.body.appendChild(link);
@@ -29,11 +30,6 @@ export const SignatureCard: React.FC<SignatureCardProps> = ({
   };
 
   // Theme Styles
-  // Enhanced Cyberpunk Liquid Glass:
-  // - High transparency with heavy blur (backdrop-blur-2xl)
-  // - Subtle gradient background for depth
-  // - "Glass edge" border (white/10)
-  // - Shadow for lift
   const containerClasses = isCyber
     ? "bg-gradient-to-br from-slate-900/60 via-slate-900/40 to-slate-900/60 backdrop-blur-2xl rounded-3xl border border-white/10 hover:border-cyan-500/30 transition-all duration-500 group relative overflow-hidden shadow-[0_8px_32px_0_rgba(0,0,0,0.36)]"
     : "bg-white/60 backdrop-blur-xl rounded-[2rem] border border-white/50 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group shadow-lg shadow-slate-200/50 overflow-hidden";
@@ -65,13 +61,8 @@ export const SignatureCard: React.FC<SignatureCardProps> = ({
       {/* Cyber Liquid Sheen & Decor */}
       {isCyber && (
         <>
-          {/* Glossy Gradient Overlay */}
           <div className="absolute inset-0 bg-gradient-to-br from-white/5 via-transparent to-black/40 pointer-events-none"></div>
-          
-          {/* Top Edge Highlight */}
           <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent opacity-50"></div>
-          
-          {/* Hover Glow Effect */}
           <div className="absolute -inset-full top-0 block h-full w-1/2 -skew-x-12 bg-gradient-to-r from-transparent to-white opacity-10 group-hover:animate-shine" />
         </>
       )}
@@ -89,10 +80,18 @@ export const SignatureCard: React.FC<SignatureCardProps> = ({
          {isCyber && (
            <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-cyan-900/20 to-transparent pointer-events-none"></div>
          )}
+         
+         {/* Loading Overlay */}
+         {isUpdating && (
+           <div className="absolute inset-0 z-20 flex items-center justify-center backdrop-blur-[2px] bg-white/10 rounded-lg transition-all">
+             <div className={`w-8 h-8 border-2 rounded-full animate-spin ${isCyber ? 'border-cyan-500 border-t-transparent' : 'border-blue-500 border-t-transparent'}`}></div>
+           </div>
+         )}
+
          <img 
-          src={currentImage} 
+          src={signature.processedDataUrl} 
           alt={`Signature ${index + 1}`}
-          className={`max-w-full h-auto bg-white z-10 ${isCyber ? 'border border-white/10 shadow-[0_0_30px_rgba(0,0,0,0.5)] rounded-lg' : 'rounded-xl shadow-sm'}`}
+          className={`max-w-full h-auto bg-white z-10 transition-opacity duration-300 ${isUpdating ? 'opacity-80' : 'opacity-100'} ${isCyber ? 'border border-white/10 shadow-[0_0_30px_rgba(0,0,0,0.5)] rounded-lg' : 'rounded-xl shadow-sm'}`}
           style={{ 
             aspectRatio: `${signature.width}/${signature.height}`
           }}

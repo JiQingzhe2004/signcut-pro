@@ -42,6 +42,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   
   const isCyber = theme === 'cyberpunk';
+  const SNAP_THRESHOLD = 10;
 
   // --- Helpers ---
 
@@ -63,6 +64,21 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
     const y = clamp(clientY * scaleY, 0, originalHeight);
 
     return { x, y };
+  };
+
+  // Find the closest snap target within threshold
+  const getSnappedValue = (currentVal: number, targets: number[]) => {
+    let closest = currentVal;
+    let minDiff = SNAP_THRESHOLD;
+
+    for (const t of targets) {
+      const diff = Math.abs(currentVal - t);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closest = t;
+      }
+    }
+    return closest;
   };
 
   // --- Handlers ---
@@ -129,6 +145,11 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
       const deltaX = current.x - startPoint.x;
       const deltaY = current.y - startPoint.y;
 
+      // Prepare Snap Targets (Image Bounds + Edges of OTHER boxes)
+      const otherBoxes = boxes.filter(b => b.id !== selectedId);
+      const vTargets = [0, originalWidth, ...otherBoxes.flatMap(b => [b.x, b.x + b.width])];
+      const hTargets = [0, originalHeight, ...otherBoxes.flatMap(b => [b.y, b.y + b.height])];
+
       if (mode === 'DRAWING' && tempBox) {
         let newX = startPoint.x;
         let newY = startPoint.y;
@@ -164,27 +185,109 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
       else if (mode === 'MOVING' && initialBoxSnapshot) {
         const rawX = initialBoxSnapshot.x + deltaX;
         const rawY = initialBoxSnapshot.y + deltaY;
+        const width = initialBoxSnapshot.width;
+        const height = initialBoxSnapshot.height;
+
+        // Snapping Logic for Move:
+        // Check Left edge
+        const snappedLeft = getSnappedValue(rawX, vTargets);
+        // Check Right edge (if we snapped right, what would X be?)
+        const snappedRightX = getSnappedValue(rawX + width, vTargets) - width;
         
-        const maxX = originalWidth - initialBoxSnapshot.width;
-        const maxY = originalHeight - initialBoxSnapshot.height;
+        // Determine which X snap is stronger (closer)
+        const diffLeft = Math.abs(snappedLeft - rawX);
+        const diffRight = Math.abs(snappedRightX - rawX);
         
-        const newX = clamp(rawX, 0, maxX);
-        const newY = clamp(rawY, 0, maxY);
+        // Use the closer snap, provided it changed (diff < threshold is handled inside getSnappedValue logic effectively)
+        // Note: getSnappedValue returns 'currentVal' if no snap found, so diff is 0 if no snap.
+        // But if both snap, pick closer. If only one snaps, pick that one.
+        let finalX = rawX;
+        if (Math.abs(snappedLeft - rawX) < 0.01 && Math.abs(snappedRightX - rawX) > 0.01) {
+             // Only Left matched (technically) or Left matched "better"
+             finalX = snappedLeft;
+        } else if (Math.abs(snappedRightX - rawX) < 0.01 && Math.abs(snappedLeft - rawX) > 0.01) {
+             finalX = snappedRightX;
+        } else {
+             // Compare distances to snap points from original raw pos
+             // We need to re-run check against threshold to be sure which one triggered
+             const isLeftSnap = Math.abs(snappedLeft - rawX) < SNAP_THRESHOLD;
+             const isRightSnap = Math.abs((snappedRightX + width) - (rawX + width)) < SNAP_THRESHOLD;
+
+             if (isLeftSnap && isRightSnap) {
+                finalX = diffLeft < diffRight ? snappedLeft : snappedRightX;
+             } else if (isLeftSnap) {
+                finalX = snappedLeft;
+             } else if (isRightSnap) {
+                finalX = snappedRightX;
+             }
+        }
+
+        // Same for Y
+        const snappedTop = getSnappedValue(rawY, hTargets);
+        const snappedBottomY = getSnappedValue(rawY + height, hTargets) - height;
+        const diffTop = Math.abs(snappedTop - rawY);
+        const diffBottom = Math.abs(snappedBottomY - rawY);
+        
+        const isTopSnap = Math.abs(snappedTop - rawY) < SNAP_THRESHOLD;
+        const isBottomSnap = Math.abs((snappedBottomY + height) - (rawY + height)) < SNAP_THRESHOLD;
+
+        let finalY = rawY;
+        if (isTopSnap && isBottomSnap) {
+             finalY = diffTop < diffBottom ? snappedTop : snappedBottomY;
+        } else if (isTopSnap) {
+             finalY = snappedTop;
+        } else if (isBottomSnap) {
+             finalY = snappedBottomY;
+        }
+        
+        // Clamp Final
+        const maxX = originalWidth - width;
+        const maxY = originalHeight - height;
+        finalX = clamp(finalX, 0, maxX);
+        finalY = clamp(finalY, 0, maxY);
         
         setBoxes(prev => prev.map(b => 
           b.id === selectedId 
-            ? { ...b, x: newX, y: newY }
+            ? { ...b, x: finalX, y: finalY }
             : b
         ));
       }
       else if (mode === 'RESIZING' && initialBoxSnapshot && activeHandle) {
         let { x, y, width, height } = initialBoxSnapshot;
 
+        // Apply Delta first
         if (activeHandle.includes('e')) width += deltaX;
         if (activeHandle.includes('w')) { x += deltaX; width -= deltaX; }
         if (activeHandle.includes('s')) height += deltaY;
         if (activeHandle.includes('n')) { y += deltaY; height -= deltaY; }
 
+        // Apply Snapping
+        if (activeHandle.includes('e')) {
+            const snappedRight = getSnappedValue(x + width, vTargets);
+            width = snappedRight - x;
+        }
+        if (activeHandle.includes('w')) {
+            const snappedLeft = getSnappedValue(x, vTargets);
+            const oldRight = x + width; // Keep right side static-ish logic handled by algebra
+            // w = oldRight - newX
+            // But we modified X and W above. 
+            // Better to snap 'x' then recalc width.
+            const diff = snappedLeft - x;
+            x = snappedLeft;
+            width -= diff; 
+        }
+        if (activeHandle.includes('s')) {
+            const snappedBottom = getSnappedValue(y + height, hTargets);
+            height = snappedBottom - y;
+        }
+        if (activeHandle.includes('n')) {
+            const snappedTop = getSnappedValue(y, hTargets);
+            const diff = snappedTop - y;
+            y = snappedTop;
+            height -= diff;
+        }
+
+        // Normalization (handling negative width/height)
         if (width < 0) {
           x += width;
           width = Math.abs(width);
@@ -232,7 +335,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
     };
-  }, [mode, startPoint, tempBox, initialBoxSnapshot, selectedId, activeHandle, originalWidth, originalHeight]);
+  }, [mode, startPoint, tempBox, initialBoxSnapshot, selectedId, activeHandle, originalWidth, originalHeight, boxes]);
 
 
   const removeBox = (id: string) => {

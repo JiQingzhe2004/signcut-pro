@@ -7,6 +7,8 @@ import { ImageEditor } from './components/ImageEditor';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<ProcessingStatus>(ProcessingStatus.IDLE);
+  const [isRecomputing, setIsRecomputing] = useState(false); // New state for background updates
+  
   const [signatures, setSignatures] = useState<ProcessedSignature[]>([]);
   const [sensitivity, setSensitivity] = useState<number>(15);
   // Default dimensions 452x224
@@ -78,7 +80,10 @@ const App: React.FC = () => {
 
   const reProcessSignatures = async (newSensitivity: number, newWidth: number, newHeight: number) => {
      if (!currentFile || detectedBoxes.length === 0) return;
-     setStatus(ProcessingStatus.PROCESSING);
+     
+     // Use local loading state to prevent unmounting the results view
+     setIsRecomputing(true);
+     
      try {
        const results = await processSignatureRegions(
          currentFile, 
@@ -94,10 +99,12 @@ const App: React.FC = () => {
            return existing ? { ...newSig, annotation: existing.annotation } : newSig;
          });
        });
-       setStatus(ProcessingStatus.COMPLETED);
+       // We do NOT change status to PROCESSING here, so the view stays stable
      } catch (e) {
        console.error(e);
-       setStatus(ProcessingStatus.ERROR);
+       // Optional: Show toast error
+     } finally {
+       setIsRecomputing(false);
      }
   };
 
@@ -150,6 +157,7 @@ const App: React.FC = () => {
     setOriginalImage(null);
     setCurrentFile(null);
     setDetectedBoxes([]);
+    setIsRecomputing(false);
   };
 
   const handleBackToEditor = () => {
@@ -302,7 +310,7 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* Processing States */}
+          {/* Processing States (Initial) */}
           {(status === ProcessingStatus.DETECTING || status === ProcessingStatus.PROCESSING) && (
             <div className="flex flex-col items-center justify-center h-80">
               <div className="relative w-20 h-20">
@@ -327,7 +335,7 @@ const App: React.FC = () => {
                   {/* Sensitivity Control */}
                   <div className="flex items-center gap-4">
                     <span className={`text-xs font-bold uppercase ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
-                      {isCyber ? '阈值设定' : '颜色深浅'}
+                      提取阈值
                     </span>
                     <div className="flex items-center gap-3">
                       <input 
@@ -396,6 +404,7 @@ const App: React.FC = () => {
                     index={idx} 
                     onUpdateAnnotation={handleUpdateAnnotation}
                     theme={theme}
+                    isUpdating={isRecomputing}
                   />
                 ))}
               </div>

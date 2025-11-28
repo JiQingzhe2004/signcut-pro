@@ -1,6 +1,6 @@
 {
   "name": "SignCut Pro - 电子签名制作",
-  "description": "自动识别照片中的手写签名，去除背景阴影，生成纯白底黑字的电子签名（15:30 比例）。",
+  "description": "基于 OpenCV 的客户端纯前端图片处理工具。支持自动识别手写签名，智能去除背景阴影，生成纯透明底黑字矢量级电子签名。包含赛博朋克与液态玻璃双主题。",
   "requestFramePermissions": [
     "camera"
   ]
