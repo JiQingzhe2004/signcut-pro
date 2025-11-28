@@ -232,16 +232,16 @@ const App: React.FC = () => {
         <header 
           className={`${headerClass} sticky top-0 z-50 transition-transform duration-500 ease-in-out ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}
         >
-          <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
             <div className="cursor-pointer group" onClick={handleReset}>
               <Logo theme={theme} />
             </div>
             
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
               {/* Theme Toggle */}
               <button 
                 onClick={toggleTheme}
-                className={`p-2 rounded-full transition-all ${isCyber ? 'bg-slate-800 text-cyan-400 hover:bg-slate-700' : 'bg-white text-slate-800 shadow-sm hover:shadow-md'}`}
+                className={`p-2 sm:p-2.5 rounded-full transition-all touch-manipulation ${isCyber ? 'bg-slate-800 text-cyan-400 hover:bg-slate-700 active:scale-95' : 'bg-white text-slate-800 shadow-sm hover:shadow-md active:scale-95'}`}
                 title="切换主题"
               >
                 {isCyber ? (
@@ -256,8 +256,9 @@ const App: React.FC = () => {
               </button>
 
               {status !== ProcessingStatus.IDLE && (
-                <Button variant="ghost" onClick={handleReset} className="text-xs" theme={theme}>
-                  {isCyber ? '// 重置系统' : '重新开始'}
+                <Button variant="ghost" onClick={handleReset} className="text-xs px-3 py-2 touch-manipulation" theme={theme}>
+                  <span className="hidden sm:inline">{isCyber ? '// 重置系统' : '重新开始'}</span>
+                  <span className="sm:hidden">{isCyber ? '重置' : '重置'}</span>
                 </Button>
               )}
             </div>
@@ -280,46 +281,46 @@ const App: React.FC = () => {
 
       {/* Main Content */}
       {(status !== ProcessingStatus.EDITING) && (
-        <main className="max-w-6xl mx-auto px-6 py-10 flex-1 w-full z-10 relative">
+        <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-1 w-full z-10 relative">
         
           {/* Intro / Upload Section */}
           {status === ProcessingStatus.IDLE && (
-            <div className="max-w-xl mx-auto text-center py-12 animate-fade-in">
+            <div className="max-w-xl mx-auto text-center py-6 sm:py-12 animate-fade-in">
               {isCyber && (
-                <div className="mb-8 inline-block px-4 py-1.5 rounded-full bg-cyan-950/30 border border-cyan-900 text-cyan-400 text-xs font-mono tracking-widest uppercase shadow-[0_0_10px_rgba(6,182,212,0.1)]">
+                <div className="mb-6 sm:mb-8 inline-block px-3 sm:px-4 py-1 sm:py-1.5 rounded-full bg-cyan-950/30 border border-cyan-900 text-cyan-400 text-[10px] sm:text-xs font-mono tracking-widest uppercase shadow-[0_0_10px_rgba(6,182,212,0.1)]">
                   SYSTEM ONLINE // 系统联机
                 </div>
               )}
               {!isCyber && (
-                <div className="mb-8 inline-block px-4 py-1.5 rounded-full bg-white/50 border border-white/60 text-blue-600 text-xs font-bold tracking-wide shadow-sm backdrop-blur">
+                <div className="mb-6 sm:mb-8 inline-block px-3 sm:px-4 py-1 sm:py-1.5 rounded-full bg-white/50 border border-white/60 text-blue-600 text-[10px] sm:text-xs font-bold tracking-wide shadow-sm backdrop-blur">
                   智能识别 · 纯净输出
                 </div>
               )}
 
-              <h2 className={`text-5xl font-bold mb-8 tracking-tight ${isCyber ? 'text-white' : 'text-slate-900'}`}>
+              <h2 className={`text-3xl sm:text-4xl md:text-5xl font-bold mb-6 sm:mb-8 tracking-tight ${isCyber ? 'text-white' : 'text-slate-900'}`}>
                 数字签名 <br/> 
                 <span className={`text-transparent bg-clip-text bg-gradient-to-r ${isCyber ? 'from-cyan-400 to-blue-500' : 'from-blue-600 to-violet-600'}`}>
                   提取转换系统
                 </span>
               </h2>
               
-              <p className={`mb-12 leading-relaxed text-base max-w-md mx-auto ${isCyber ? 'text-slate-400 font-mono' : 'text-slate-500 font-sans'}`}>
+              <p className={`mb-8 sm:mb-12 leading-relaxed text-sm sm:text-base max-w-md mx-auto px-4 ${isCyber ? 'text-slate-400 font-mono' : 'text-slate-500 font-sans'}`}>
                 {isCyber ? '> 上传手写图像数据' : '上传手写照片'}<br/>
                 {isCyber ? '> 手动锁定签名边界' : '选择签名区域'}<br/>
                 {isCyber ? '> 生成二值化矢量级输出' : '一键生成透明底电子签名'}
               </p>
               
-              <label className={`group relative flex flex-col items-center justify-center w-full h-72 border-2 border-dashed rounded-3xl cursor-pointer transition-all ${isCyber ? 'border-cyan-500/30 bg-slate-900/50 hover:bg-cyan-950/10 hover:border-cyan-400 hover:shadow-[0_0_30px_rgba(6,182,212,0.15)]' : 'border-slate-300 bg-white/40 hover:bg-white/60 hover:border-blue-400 hover:shadow-xl hover:scale-[1.02] backdrop-blur-sm'}`}>
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform ${isCyber ? 'bg-slate-800 border border-slate-700 group-hover:border-cyan-500/50' : 'bg-white shadow-lg text-blue-500'}`}>
-                    <svg className={`w-10 h-10 ${isCyber ? 'text-cyan-500' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <label className={`group relative flex flex-col items-center justify-center w-full h-56 sm:h-72 border-2 border-dashed rounded-2xl sm:rounded-3xl cursor-pointer transition-all touch-manipulation ${isCyber ? 'border-cyan-500/30 bg-slate-900/50 active:bg-cyan-950/10 active:border-cyan-400 active:shadow-[0_0_30px_rgba(6,182,212,0.15)]' : 'border-slate-300 bg-white/40 active:bg-white/60 active:border-blue-400 active:shadow-xl active:scale-[1.02] backdrop-blur-sm'}`}>
+                <div className="flex flex-col items-center justify-center pt-5 pb-6 px-4">
+                  <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center mb-4 sm:mb-6 group-active:scale-110 transition-transform ${isCyber ? 'bg-slate-800 border border-slate-700 group-active:border-cyan-500/50' : 'bg-white shadow-lg text-blue-500'}`}>
+                    <svg className={`w-8 h-8 sm:w-10 sm:h-10 ${isCyber ? 'text-cyan-500' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                     </svg>
                   </div>
-                  <p className={`mb-2 text-base font-bold uppercase tracking-wider ${isCyber ? 'text-cyan-100' : 'text-slate-700'}`}>
+                  <p className={`mb-2 text-sm sm:text-base font-bold uppercase tracking-wider ${isCyber ? 'text-cyan-100' : 'text-slate-700'}`}>
                     {isCyber ? '初始化数据上传' : '点击上传图片'}
                   </p>
-                  <p className={`text-sm ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400'}`}>支持 JPG, PNG 格式输入</p>
+                  <p className={`text-xs sm:text-sm ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400'}`}>支持 JPG, PNG 格式输入</p>
                 </div>
                 <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} />
               </label>
@@ -345,22 +346,22 @@ const App: React.FC = () => {
           {status === ProcessingStatus.COMPLETED && (
             <div className="animate-fade-in">
               {/* Controls Toolbar */}
-              <div className={`${toolbarClass} p-5 mb-10 flex flex-wrap items-center justify-between gap-6 sticky z-20 transition-all duration-500 ease-in-out ${showHeader ? 'top-28' : 'top-6'}`}>
+              <div className={`${toolbarClass} p-4 sm:p-5 mb-6 sm:mb-10 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-4 sm:gap-6 sticky z-20 transition-all duration-500 ease-in-out ${showHeader ? 'top-20 sm:top-28' : 'top-4 sm:top-6'}`}>
                 
-                <div className="flex flex-wrap items-center gap-8">
+                <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-4 sm:gap-8 w-full sm:w-auto">
                   {/* Sensitivity Control */}
-                  <div className="flex items-center gap-4">
-                    <span className={`text-xs font-bold uppercase ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
+                  <div className="flex items-center gap-3 sm:gap-4 flex-1 sm:flex-none">
+                    <span className={`text-xs font-bold uppercase whitespace-nowrap ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
                       提取阈值
                     </span>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3 flex-1 sm:flex-none">
                       <input 
                         type="range" 
                         min="5" 
                         max="40" 
                         value={sensitivity} 
                         onChange={handleSensitivityChange}
-                        className={`w-32 h-1.5 rounded-lg appearance-none cursor-pointer ${isCyber ? 'bg-slate-700 accent-cyan-500' : 'bg-slate-200 accent-blue-500'}`}
+                        className={`flex-1 sm:w-32 h-2 sm:h-1.5 rounded-lg appearance-none cursor-pointer touch-manipulation ${isCyber ? 'bg-slate-700 accent-cyan-500' : 'bg-slate-200 accent-blue-500'}`}
                       />
                       <span className={`text-xs px-2.5 py-1 rounded font-medium min-w-[30px] text-center ${isCyber ? 'bg-slate-800 border border-slate-700 text-cyan-400 font-mono' : 'bg-white shadow-sm text-slate-600 font-sans'}`}>
                         {sensitivity}
@@ -369,50 +370,50 @@ const App: React.FC = () => {
                   </div>
 
                   {/* Dimension Control */}
-                  <div className={`flex items-center gap-4 pl-8 ${isCyber ? 'border-l border-slate-800' : 'border-l border-slate-200'}`}>
-                    <span className={`text-xs font-bold uppercase ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
+                  <div className={`flex items-center gap-3 sm:gap-4 sm:pl-8 ${isCyber ? 'sm:border-l border-slate-800' : 'sm:border-l border-slate-200'}`}>
+                    <span className={`text-xs font-bold uppercase whitespace-nowrap ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
                       {isCyber ? '分辨率矩阵' : '输出尺寸'}
                     </span>
                     <div className="flex items-center gap-2 text-sm">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 sm:gap-2">
                         <span className={`text-[10px] ${isCyber ? 'text-slate-600 font-mono' : 'text-slate-400'}`}>宽</span>
                         <input 
                           type="number" 
                           value={outputSize.width}
                           onChange={(e) => handleOutputSizeChange('width', e.target.value)}
                           onBlur={handleOutputSizeBlur}
-                          className={`w-20 px-3 py-1.5 rounded-lg text-center text-xs focus:outline-none focus:ring-2 transition-all ${isCyber ? 'bg-slate-950 border border-slate-700 text-cyan-50 focus:border-cyan-500 font-mono' : 'bg-slate-100 border-transparent text-slate-800 focus:bg-white focus:shadow-sm font-sans'}`}
+                          className={`w-16 sm:w-20 px-2 sm:px-3 py-1.5 rounded-lg text-center text-xs focus:outline-none focus:ring-2 transition-all touch-manipulation ${isCyber ? 'bg-slate-950 border border-slate-700 text-cyan-50 focus:border-cyan-500 font-mono' : 'bg-slate-100 border-transparent text-slate-800 focus:bg-white focus:shadow-sm font-sans'}`}
                         />
                       </div>
                       <span className="text-slate-400">×</span>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 sm:gap-2">
                         <span className={`text-[10px] ${isCyber ? 'text-slate-600 font-mono' : 'text-slate-400'}`}>高</span>
                         <input 
                           type="number" 
                           value={outputSize.height}
                           onChange={(e) => handleOutputSizeChange('height', e.target.value)}
                           onBlur={handleOutputSizeBlur}
-                          className={`w-20 px-3 py-1.5 rounded-lg text-center text-xs focus:outline-none focus:ring-2 transition-all ${isCyber ? 'bg-slate-950 border border-slate-700 text-cyan-50 focus:border-cyan-500 font-mono' : 'bg-slate-100 border-transparent text-slate-800 focus:bg-white focus:shadow-sm font-sans'}`}
+                          className={`w-16 sm:w-20 px-2 sm:px-3 py-1.5 rounded-lg text-center text-xs focus:outline-none focus:ring-2 transition-all touch-manipulation ${isCyber ? 'bg-slate-950 border border-slate-700 text-cyan-50 focus:border-cyan-500 font-mono' : 'bg-slate-100 border-transparent text-slate-800 focus:bg-white focus:shadow-sm font-sans'}`}
                         />
                       </div>
                     </div>
                   </div>
                 </div>
                 
-                <div className="flex items-center gap-3 ml-auto">
+                <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto sm:ml-auto">
                    <div className={`text-xs font-medium hidden lg:block mr-4 ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
                      {isCyber ? `计数: ${String(signatures.length).padStart(2, '0')}` : `已生成 ${signatures.length} 个`}
                    </div>
-                   <Button variant="secondary" onClick={handleBackToEditor} className="text-xs px-4" theme={theme}>
+                   <Button variant="secondary" onClick={handleBackToEditor} className="text-xs px-3 sm:px-4 py-2 flex-1 sm:flex-none touch-manipulation" theme={theme}>
                     {isCyber ? '// 编辑目标' : '调整选区'}
                    </Button>
-                   <Button onClick={handleDownloadAll} className="text-xs px-4" theme={theme}>
+                   <Button onClick={handleDownloadAll} className="text-xs px-3 sm:px-4 py-2 flex-1 sm:flex-none touch-manipulation" theme={theme}>
                      {isCyber ? '批量下载' : '全部保存'}
                    </Button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
                 {signatures.map((sig, idx) => (
                   <SignatureCard 
                     key={sig.id} 
@@ -456,9 +457,9 @@ const App: React.FC = () => {
 
       {/* Footer */}
       {status !== ProcessingStatus.EDITING && (
-        <footer className={`w-full py-6 mt-auto z-10 relative ${isCyber ? 'border-t border-slate-800' : 'border-t border-slate-200/50'}`}>
-          <div className="max-w-6xl mx-auto px-6">
-            <p className={`text-center text-sm ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
+        <footer className={`w-full py-4 sm:py-6 mt-auto z-10 relative ${isCyber ? 'border-t border-slate-800' : 'border-t border-slate-200/50'}`}>
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
+            <p className={`text-center text-xs sm:text-sm ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
               © {new Date().getFullYear()} - 吉庆喆版权所有
             </p>
           </div>

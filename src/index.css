@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+/* Mobile Optimizations */
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+.touch-manipulation {
+  touch-action: manipulation;
+}
+
+.touch-none {
+  touch-action: none;
+}
+
 /* 灯箱动画 */
 @keyframes fadeIn {
   from {

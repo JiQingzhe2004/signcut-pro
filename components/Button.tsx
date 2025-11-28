@@ -20,8 +20,8 @@ export const Button: React.FC<ButtonProps> = ({
 
   // Base styles
   const baseStyle = isCyber
-    ? "px-6 py-3 font-mono text-sm font-bold tracking-wider uppercase transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 border relative overflow-hidden group rounded-2xl"
-    : "px-6 py-3 font-sans text-sm font-semibold tracking-wide transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 shadow-sm border rounded-full hover:shadow-md";
+    ? "px-4 sm:px-6 py-2.5 sm:py-3 font-mono text-xs sm:text-sm font-bold tracking-wider uppercase transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 border relative overflow-hidden group rounded-2xl touch-manipulation min-h-[44px]"
+    : "px-4 sm:px-6 py-2.5 sm:py-3 font-sans text-xs sm:text-sm font-semibold tracking-wide transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 shadow-sm border rounded-full hover:shadow-md touch-manipulation min-h-[44px]";
   
   const variants = {
     primary: isCyber 

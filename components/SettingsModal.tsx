@@ -34,18 +34,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, s
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-          <h3 className="font-bold text-slate-800">AI 模型设置</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in overflow-y-auto">
+      <div className="bg-white rounded-2xl sm:rounded-2xl shadow-2xl w-full max-w-md my-auto overflow-hidden">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+          <h3 className="font-bold text-slate-800 text-base sm:text-lg">AI 模型设置</h3>
+          <button onClick={onClose} className="text-slate-400 active:text-slate-600 touch-manipulation p-1 active:scale-95">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
         
-        <div className="p-6 space-y-5">
+        <div className="p-4 sm:p-6 space-y-4 sm:space-y-5 max-h-[70vh] overflow-y-auto">
           {/* Provider Selection */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">选择 AI 服务商</label>
@@ -115,9 +115,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, s
           </div>
         </div>
 
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-          <Button variant="ghost" onClick={onClose}>取消</Button>
-          <Button onClick={handleSave}>保存配置</Button>
+        <div className="px-4 sm:px-6 py-3 sm:py-4 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
+          <Button variant="ghost" onClick={onClose} className="w-full sm:w-auto touch-manipulation">取消</Button>
+          <Button onClick={handleSave} className="w-full sm:w-auto touch-manipulation">保存配置</Button>
         </div>
       </div>
     </div>

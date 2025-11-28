@@ -78,7 +78,7 @@ export const SignatureCard: React.FC<SignatureCardProps> = ({
         </div>
 
         {/* Image Display */}
-        <div className={imageContainerClasses} onClick={() => setIsPreviewOpen(true)} title="点击预览大图">
+        <div className={`${imageContainerClasses} touch-manipulation`} onClick={() => setIsPreviewOpen(true)} title="点击预览大图">
            {isCyber && (
              <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-cyan-900/20 to-transparent pointer-events-none"></div>
            )}
@@ -110,21 +110,21 @@ export const SignatureCard: React.FC<SignatureCardProps> = ({
         </div>
 
         {/* Annotation Input */}
-        <div className={`px-5 pt-4 z-10 relative ${isCyber ? 'border-t border-white/5' : 'border-t border-slate-100/50'}`}>
+        <div className={`px-4 sm:px-5 z-10 relative`}>
           <div className="flex gap-2">
             <input 
               type="text" 
               value={signature.annotation || ''} 
               onChange={(e) => onUpdateAnnotation(signature.id, e.target.value)}
               placeholder="添加备注名称..." 
-              className={inputClasses}
+              className={`${inputClasses} text-sm sm:text-base`}
             />
           </div>
         </div>
 
         {/* Actions */}
-        <div className="p-5 mt-auto z-10 relative">
-          <Button onClick={handleDownload} className="w-full text-xs" theme={theme} variant={downloadBtnVariant}>
+        <div className="p-4 sm:p-5 mt-auto z-10 relative">
+          <Button onClick={handleDownload} className="w-full text-xs sm:text-sm py-2.5 sm:py-3 touch-manipulation" theme={theme} variant={downloadBtnVariant}>
             {isCyber ? '下载数据 / DOWNLOAD' : '保存图片'}
           </Button>
         </div>
@@ -145,34 +145,34 @@ export const SignatureCard: React.FC<SignatureCardProps> = ({
           {/* Close Button */}
           <button 
             onClick={() => setIsPreviewOpen(false)}
-            className={`absolute top-8 right-8 p-2 rounded-full transition-all duration-300 z-[101] group/close ${
+            className={`absolute top-4 right-4 sm:top-8 sm:right-8 p-2.5 sm:p-2 rounded-full transition-all duration-300 z-[101] group/close touch-manipulation active:scale-95 ${
               isCyber 
-                ? 'bg-slate-800/80 hover:bg-slate-700/80 text-cyan-400 border border-cyan-500/30' 
-                : 'bg-white/90 hover:bg-white text-slate-800 shadow-lg'
+                ? 'bg-slate-800/80 active:bg-slate-700/80 text-cyan-400 border border-cyan-500/30' 
+                : 'bg-white/90 active:bg-white text-slate-800 shadow-lg'
             }`}
           >
-            <svg className="w-6 h-6 group-hover/close:rotate-90 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-6 h-6 sm:w-6 sm:h-6 group-active/close:rotate-90 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
 
           {/* Image Container */}
           <div 
-            className="relative max-w-[90vw] max-h-[85vh] p-1 animate-zoom-in"
+            className="relative max-w-[95vw] sm:max-w-[90vw] max-h-[90vh] sm:max-h-[85vh] p-2 sm:p-1 animate-zoom-in"
             onClick={(e) => e.stopPropagation()} 
           >
             <img 
               src={signature.processedDataUrl} 
               alt="Full Preview" 
-              className={`max-w-full max-h-[80vh] object-contain select-none shadow-2xl rounded-lg ${
+              className={`max-w-full max-h-[75vh] sm:max-h-[80vh] object-contain select-none shadow-2xl rounded-lg ${
                 isCyber 
                   ? 'drop-shadow-[0_0_50px_rgba(6,182,212,0.3)] border border-cyan-500/20' 
                   : 'drop-shadow-[0_0_50px_rgba(0,0,0,0.3)]'
               }`}
             />
             {signature.annotation && (
-               <div className="mt-6 text-center animate-fade-in">
-                  <span className={`inline-block px-6 py-2 rounded-full backdrop-blur-md font-medium text-lg tracking-wide border ${
+               <div className="mt-4 sm:mt-6 text-center animate-fade-in px-4">
+                  <span className={`inline-block px-4 sm:px-6 py-1.5 sm:py-2 rounded-full backdrop-blur-md font-medium text-sm sm:text-lg tracking-wide border ${
                     isCyber 
                       ? 'bg-cyan-950/50 border-cyan-500/30 text-cyan-400 font-mono' 
                       : 'bg-white/90 border-slate-200 text-slate-800 font-sans shadow-lg'
@@ -181,7 +181,7 @@ export const SignatureCard: React.FC<SignatureCardProps> = ({
                   </span>
                </div>
             )}
-            <div className={`mt-4 text-center text-xs ${
+            <div className={`mt-3 sm:mt-4 text-center text-[10px] sm:text-xs ${
               isCyber 
                 ? 'text-cyan-200 font-mono' 
                 : 'text-slate-600 font-sans'

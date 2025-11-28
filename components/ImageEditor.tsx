@@ -49,13 +49,19 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
 
   const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
 
-  // Convert Mouse Event to Image Coordinates
-  const getRelativeCoords = (e: React.MouseEvent | MouseEvent) => {
+  // Convert Mouse/Touch Event to Image Coordinates
+  const getRelativeCoords = (e: React.MouseEvent | MouseEvent | React.TouchEvent | TouchEvent) => {
     if (!containerRef.current) return { x: 0, y: 0 };
     const rect = containerRef.current.getBoundingClientRect();
     
-    const clientX = e.clientX - rect.left;
-    const clientY = e.clientY - rect.top;
+    let clientX: number, clientY: number;
+    if ('touches' in e && e.touches.length > 0) {
+      clientX = e.touches[0].clientX - rect.left;
+      clientY = e.touches[0].clientY - rect.top;
+    } else {
+      clientX = e.clientX - rect.left;
+      clientY = e.clientY - rect.top;
+    }
 
     const scaleX = originalWidth / rect.width;
     const scaleY = originalHeight / rect.height;
@@ -84,8 +90,8 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
 
   // --- Handlers ---
 
-  // 1. Mouse Down on Container (Start Drawing or Deselect)
-  const handleContainerMouseDown = (e: React.MouseEvent) => {
+  // 1. Mouse/Touch Down on Container (Start Drawing or Deselect)
+  const handleContainerMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
     if (isPreviewMode) return;
     
     // Only start drawing if clicking directly on the image/overlay container, not on a box
@@ -137,9 +143,9 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
     setInitialBoxSnapshot({ ...box });
   };
 
-  // 4. Global Mouse Move
+  // 4. Global Mouse/Touch Move
   useEffect(() => {
-    const handleWindowMouseMove = (e: MouseEvent) => {
+    const handleWindowMouseMove = (e: MouseEvent | TouchEvent) => {
       if (mode === 'IDLE' || !startPoint) return;
 
       const current = getRelativeCoords(e);
@@ -317,14 +323,27 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
       setActiveHandle(null);
     };
 
+    const handleWindowTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      handleWindowMouseMove(e);
+    };
+
+    const handleWindowTouchEnd = () => {
+      handleWindowMouseUp();
+    };
+
     if (mode !== 'IDLE') {
       window.addEventListener('mousemove', handleWindowMouseMove);
       window.addEventListener('mouseup', handleWindowMouseUp);
+      window.addEventListener('touchmove', handleWindowTouchMove, { passive: false });
+      window.addEventListener('touchend', handleWindowTouchEnd);
     }
 
     return () => {
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
+      window.removeEventListener('touchmove', handleWindowTouchMove);
+      window.removeEventListener('touchend', handleWindowTouchEnd);
     };
   }, [mode, startPoint, tempBox, initialBoxSnapshot, selectedId, activeHandle, originalWidth, originalHeight, boxes]);
 
@@ -349,17 +368,17 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
     <div className={`flex flex-col h-full animate-fade-in ${containerBgClass}`}>
       
       {/* Floating Toolbar / Header */}
-      <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-6xl px-4 lg:px-6`}>
-        <div className={`${toolbarClass} p-4 flex flex-wrap items-center justify-between gap-4`}>
+      <div className={`fixed top-4 sm:top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-6xl px-3 sm:px-4 lg:px-6`}>
+        <div className={`${toolbarClass} p-3 sm:p-4 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-3 sm:gap-4`}>
            
            {/* Left: Branding & Stats */}
-           <div className="flex items-center gap-6">
+           <div className="flex items-center gap-3 sm:gap-6">
              <Logo theme={theme} collapsed={true} />
              
-             <div className="h-8 w-px bg-current opacity-10"></div>
+             <div className="h-6 sm:h-8 w-px bg-current opacity-10"></div>
              
-             <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm ${isCyber ? 'bg-cyan-900 text-cyan-400' : 'bg-blue-100 text-blue-600'}`}>
+             <div className="flex items-center gap-2 sm:gap-3">
+                <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-bold text-xs sm:text-sm ${isCyber ? 'bg-cyan-900 text-cyan-400' : 'bg-blue-100 text-blue-600'}`}>
                   {boxes.length}
                 </div>
                 <div className="hidden sm:block">
@@ -374,10 +393,10 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
            </div>
 
            {/* Right: Controls */}
-           <div className="flex items-center gap-3">
+           <div className="flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
              <button 
                onClick={() => setIsPreviewMode(!isPreviewMode)}
-               className={`p-2 rounded-lg transition-colors ${isPreviewMode ? (isCyber ? 'bg-cyan-500 text-black' : 'bg-blue-500 text-white') : (isCyber ? 'bg-slate-800 text-slate-400 hover:text-cyan-400' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}`}
+               className={`p-2 rounded-lg transition-colors touch-manipulation active:scale-95 ${isPreviewMode ? (isCyber ? 'bg-cyan-500 text-black' : 'bg-blue-500 text-white') : (isCyber ? 'bg-slate-800 text-slate-400 active:text-cyan-400' : 'bg-slate-100 text-slate-500 active:bg-slate-200')}`}
                title={isPreviewMode ? "切换回编辑模式" : "切换到预览模式"}
              >
                {isPreviewMode ? (
@@ -388,17 +407,17 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
              </button>
              
              {!isPreviewMode && boxes.length > 0 && (
-               <Button variant="danger" onClick={handleClear} className="text-xs px-3" theme={theme}>
+               <Button variant="danger" onClick={handleClear} className="text-xs px-2 sm:px-3 py-2 touch-manipulation" theme={theme}>
                  {isCyber ? '清除' : '清空'}
                </Button>
              )}
              
-             <div className={`h-6 w-px mx-2 ${isCyber ? 'bg-slate-700' : 'bg-slate-300'}`}></div>
+             <div className={`h-6 w-px mx-1 sm:mx-2 ${isCyber ? 'bg-slate-700' : 'bg-slate-300'}`}></div>
 
-             <Button variant="ghost" onClick={onCancel} className="text-xs px-3" theme={theme}>
+             <Button variant="ghost" onClick={onCancel} className="text-xs px-2 sm:px-3 py-2 touch-manipulation flex-1 sm:flex-none" theme={theme}>
                取消
              </Button>
-             <Button onClick={() => onConfirm(boxes)} className="text-xs px-4 min-w-[100px]" theme={theme}>
+             <Button onClick={() => onConfirm(boxes)} className="text-xs px-3 sm:px-4 py-2 min-w-[80px] sm:min-w-[100px] touch-manipulation flex-1 sm:flex-none" theme={theme}>
                {boxes.length === 0 ? '全图处理' : (isCyber ? '确认提取' : '确认选择')}
              </Button>
            </div>
@@ -406,18 +425,19 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
       </div>
 
       {/* Canvas Area */}
-      <div className="flex-1 overflow-hidden flex items-center justify-center p-4 pt-28">
+      <div className="flex-1 overflow-auto flex items-center justify-center p-2 sm:p-4 pt-36 sm:pt-28">
         <div 
-          className="relative shadow-2xl select-none cursor-crosshair"
+          className="relative shadow-2xl select-none cursor-crosshair touch-none"
           style={{ width: 'fit-content', height: 'fit-content' }}
           onMouseDown={handleContainerMouseDown}
+          onTouchStart={handleContainerMouseDown}
         >
           {/* Main Image */}
           <img 
             ref={containerRef as any}
             src={imageUrl} 
             alt="Source" 
-            className={`max-h-[75vh] max-w-full object-contain pointer-events-none ${isCyber ? 'border border-slate-700' : 'rounded-lg shadow-lg'}`}
+            className={`max-h-[70vh] sm:max-h-[75vh] max-w-full object-contain pointer-events-none ${isCyber ? 'border border-slate-700' : 'rounded-lg shadow-lg'}`}
             draggable={false}
           />
           
@@ -457,7 +477,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
       </div>
       
       {/* Help Text */}
-      <div className={`pb-6 text-center text-xs ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400'}`}>
+      <div className={`pb-4 sm:pb-6 px-4 text-center text-[10px] sm:text-xs ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400'}`}>
         {isPreviewMode ? '预览模式下无法编辑' : (isCyber ? '[操作指南] 拖拽绘制 / 点击选中 / 拖动边缘调整 / delete删除' : '提示：拖拽框选，点击选中可调整大小，Delete键删除')}
       </div>
     </div>
@@ -519,10 +539,15 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
       {/* Close Button */}
       {isSelected && showControls && (
         <div 
-          className={`absolute -top-7 right-0 w-5 h-5 flex items-center justify-center rounded cursor-pointer transition-colors ${isCyber ? 'bg-red-900/80 text-red-400 border border-red-800 hover:bg-red-600 hover:text-white' : 'bg-red-500 text-white shadow-sm hover:bg-red-600'}`}
+          className={`absolute -top-7 right-0 w-6 h-6 sm:w-5 sm:h-5 flex items-center justify-center rounded cursor-pointer transition-colors touch-manipulation active:scale-95 ${isCyber ? 'bg-red-900/80 text-red-400 border border-red-800 active:bg-red-600 active:text-white' : 'bg-red-500 text-white shadow-sm active:bg-red-600'}`}
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          onTouchEnd={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onRemove();
+          }}
         >
-          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-3.5 h-3.5 sm:w-3 sm:h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12" />
           </svg>
         </div>
@@ -532,13 +557,28 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
       {isSelected && showControls && handles.map(handle => (
         <div
           key={handle}
-          className={`absolute w-2.5 h-2.5 z-30 transform -translate-x-1/2 -translate-y-1/2 ${isCyber ? 'bg-cyan-400 border border-cyan-950 shadow-[0_0_5px_cyan]' : 'bg-white border border-blue-500 rounded-full shadow-sm'}`}
+          className={`absolute w-4 h-4 sm:w-2.5 sm:h-2.5 z-30 transform -translate-x-1/2 -translate-y-1/2 touch-manipulation ${isCyber ? 'bg-cyan-400 border border-cyan-950 shadow-[0_0_5px_cyan]' : 'bg-white border border-blue-500 rounded-full shadow-sm'}`}
           style={{
             top: handle.includes('n') ? '0%' : handle.includes('s') ? '100%' : '50%',
             left: handle.includes('w') ? '0%' : handle.includes('e') ? '100%' : '50%',
             cursor: `${handle}-resize`
           }}
           onMouseDown={(e) => onResizeStart(e, box.id, handle)}
+          onTouchStart={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            if (e.touches.length === 1) {
+              // Create a synthetic mouse event for compatibility
+              const syntheticEvent = {
+                ...e,
+                clientX: e.touches[0].clientX,
+                clientY: e.touches[0].clientY,
+                stopPropagation: () => e.stopPropagation(),
+                preventDefault: () => e.preventDefault()
+              } as any;
+              onResizeStart(syntheticEvent, box.id, handle);
+            }
+          }}
         />
       ))}
     </div>
