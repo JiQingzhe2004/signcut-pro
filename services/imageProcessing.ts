@@ -488,38 +488,107 @@ const processSingleSignatureWithOpenCV = (
     cleanedBinary.delete();
     cleanedBinary = null;
 
-    // 11. Invert back to Black Text on White Background
-    cv.bitwise_not(finalCleaned, dst);
-    finalCleaned.delete();
+    // 11. Vectorization Reconstruction (Simulated "Training" effect)
+    // Instead of using the binary mask directly, we reconstruct the signature using contours.
+    // This provides smooth, vector-like edges similar to digital whiteboards.
 
+    // Find contours on the cleaned binary mask
+    const contours = new cv.MatVector();
+    const hierarchy = new cv.Mat();
+    // Use RETR_CCOMP to handle holes (e.g. inside 'o', '8', '0')
+    // Hierarchy: [Next, Previous, First_Child, Parent]
+    cv.findContours(finalCleaned, contours, hierarchy, cv.RETR_CCOMP, cv.CHAIN_APPROX_SIMPLE);
+
+    // Create a high-res transparent canvas for reconstruction
+    // We draw on the original resolution first to capture details
+    let reconstructed = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, new cv.Scalar(0, 0, 0, 0));
+
+    // Vectorize and Draw
+    for (let i = 0; i < contours.size(); ++i) {
+      // Check if it's a top-level contour (Ink Body)
+      // hierarchy.intPtr(0, i)[3] is the parent index. -1 means no parent (Top Level)
+      const parentIdx = hierarchy.intPtr(0, i)[3];
+      
+      if (parentIdx === -1) {
+        const contour = contours.get(i);
+        const approx = new cv.Mat();
+        
+        // Approximate contour to smooth out jagged edges (Simulate Vectorization)
+        // Epsilon controls smoothness. 0.001 * perimeter is a good balance.
+        const epsilon = 0.001 * cv.arcLength(contour, true);
+        cv.approxPolyDP(contour, approx, epsilon, true);
+
+        // Draw the smoothed contour filled with Black
+        // Create a temporary MatVector to pass to drawContours
+        const vec = new cv.MatVector();
+        vec.push_back(approx);
+        cv.drawContours(reconstructed, vec, 0, new cv.Scalar(0, 0, 0, 255), -1, cv.LINE_AA);
+        
+        vec.delete();
+        approx.delete();
+      }
+    }
+
+    // Second Pass: Cut out the holes
+    for (let i = 0; i < contours.size(); ++i) {
+      const parentIdx = hierarchy.intPtr(0, i)[3];
+      
+      // If it has a parent, it's a hole inside the ink
+      if (parentIdx !== -1) {
+        const contour = contours.get(i);
+        const approx = new cv.Mat();
+        
+        const epsilon = 0.001 * cv.arcLength(contour, true);
+        cv.approxPolyDP(contour, approx, epsilon, true);
+
+        const vec = new cv.MatVector();
+        vec.push_back(approx);
+        
+        // "Erase" mode: Draw with alpha=0 (Transparent)
+        // We need to set composite mode. But OpenCV drawContours replaces pixels.
+        // Writing (0,0,0,0) effectively erases if we just overwrite.
+        cv.drawContours(reconstructed, vec, 0, new cv.Scalar(0, 0, 0, 0), -1, cv.LINE_AA);
+        
+        vec.delete();
+        approx.delete();
+      }
+    }
+
+    // Clean up contour data
+    contours.delete();
+    hierarchy.delete();
+    
+    // Use the reconstructed vector-like image as the source for resizing
+    // Note: reconstructed is RGBA (Transparent BG, Black Ink)
+    
     // --- Resizing and Centering Logic ---
-    // We create a new Mat for the target size filled with White
-    let finalMat = new cv.Mat(targetHeight, targetWidth, cv.CV_8UC4, new cv.Scalar(255, 255, 255, 255));
+    // We create a new Mat for the target size filled with Transparent (Whiteboard style)
+    // Use transparent (0,0,0,0) background
+    let finalMat = new cv.Mat(targetHeight, targetWidth, cv.CV_8UC4, new cv.Scalar(0, 0, 0, 0));
     
     // Calculate aspect ratio fit
     const padding = Math.max(10, Math.min(targetWidth, targetHeight) * 0.05);
     const availW = targetWidth - padding * 2;
     const availH = targetHeight - padding * 2;
     
-    // We process 'dst' (Binary), but we want output to be RGBA
-    // First resize the binary signature
-    const scale = Math.min(availW / dst.cols, availH / dst.rows);
-    const dsize = new cv.Size(Math.round(dst.cols * scale), Math.round(dst.rows * scale));
+    const scale = Math.min(availW / reconstructed.cols, availH / reconstructed.rows);
+    const dsize = new cv.Size(Math.round(reconstructed.cols * scale), Math.round(reconstructed.rows * scale));
     
     let resized = new cv.Mat();
-    cv.resize(dst, resized, dsize, 0, 0, cv.INTER_AREA);
-
-    // Convert resized binary (1 channel) back to RGBA (4 channels)
-    // This creates grayscale-looking RGBA (R=G=B).
-    let resizedColor = new cv.Mat();
-    cv.cvtColor(resized, resizedColor, cv.COLOR_GRAY2RGBA);
+    // Use INTER_AREA for high quality downscaling of the smooth vector lines
+    cv.resize(reconstructed, resized, dsize, 0, 0, cv.INTER_AREA);
 
     // ROI (Region of Interest) copy
     const dx = Math.floor((targetWidth - dsize.width) / 2);
     const dy = Math.floor((targetHeight - dsize.height) / 2);
     
     let roi = finalMat.roi(new cv.Rect(dx, dy, dsize.width, dsize.height));
-    resizedColor.copyTo(roi);
+    
+    // Copy the resized signature to the center of finalMat
+    // Since resized is RGBA and finalMat is RGBA, simple copyTo works.
+    // However, we want to blend properly? 
+    // Since background is empty, copyTo is fine.
+    resized.copyTo(roi);
     
     // Output
     const destCanvas = document.createElement('canvas');
@@ -528,7 +597,8 @@ const processSingleSignatureWithOpenCV = (
     cv.imshow(destCanvas, finalMat);
 
     // Cleanup Loop specific
-    resized.delete(); resizedColor.delete(); roi.delete(); finalMat.delete();
+    reconstructed.delete(); resized.delete(); roi.delete(); finalMat.delete();
+    if (finalCleaned && !finalCleaned.isDeleted()) finalCleaned.delete();
 
     return destCanvas.toDataURL('image/png');
 

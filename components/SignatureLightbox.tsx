@@ -255,7 +255,7 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
                 scrollbar-width: none;
               }
             `}</style>
-            <div className="flex gap-2 sm:gap-3 justify-center px-2 overflow-x-auto thumbnail-scroll">
+            <div className="flex gap-2 sm:gap-3 justify-center px-2 overflow-x-auto thumbnail-scroll items-center py-2 sm:py-3">
               {signatures.map((sig, idx) => (
                 <button
                   key={sig.id}
@@ -263,7 +263,7 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
                     e.stopPropagation();
                     setActiveIndex(idx);
                   }}
-                  className={`relative flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden transition-all duration-300 touch-manipulation ${
+                  className={`relative flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 rounded-lg transition-all duration-300 touch-manipulation ${
                     idx === activeIndex
                       ? isCyber
                         ? 'ring-2 ring-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.5)] scale-110'
@@ -272,17 +272,22 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
                         ? 'opacity-60 hover:opacity-80 border border-cyan-500/20'
                         : 'opacity-60 hover:opacity-80 border border-slate-200'
                   }`}
+                  style={{
+                    overflow: idx === activeIndex ? 'visible' : 'hidden',
+                  }}
                 >
-                  <img
-                    src={sig.processedDataUrl}
-                    alt={sig.annotation || `签名 ${idx + 1}`}
-                    className="w-full h-full object-cover"
-                  />
-                  {idx === activeIndex && (
-                    <div className={`absolute inset-0 ${
-                      isCyber ? 'bg-cyan-400/20' : 'bg-blue-500/20'
-                    }`}></div>
-                  )}
+                  <div className="w-full h-full rounded-lg overflow-hidden">
+                    <img
+                      src={sig.processedDataUrl}
+                      alt={sig.annotation || `签名 ${idx + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                    {idx === activeIndex && (
+                      <div className={`absolute inset-0 ${
+                        isCyber ? 'bg-cyan-400/20' : 'bg-blue-500/20'
+                      }`}></div>
+                    )}
+                  </div>
                 </button>
               ))}
             </div>

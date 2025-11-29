@@ -1,5 +1,6 @@
 import React from 'react';
 import { Theme } from '../types';
+import packageJson from '../package.json';
 
 interface LogoProps {
   theme: Theme;
@@ -9,6 +10,7 @@ interface LogoProps {
 
 export const Logo: React.FC<LogoProps> = ({ theme, className = '', collapsed = false }) => {
   const isCyber = theme === 'cyberpunk';
+  const version = packageJson.version;
   
   return (
     <div className={`flex items-center gap-3 select-none ${className}`}>
@@ -24,9 +26,14 @@ export const Logo: React.FC<LogoProps> = ({ theme, className = '', collapsed = f
       {/* Text */}
       {!collapsed && (
         <div className="flex flex-col justify-center">
-          <h1 className={`font-bold leading-none tracking-tight ${isCyber ? 'text-white font-mono text-lg' : 'text-slate-900 font-sans text-xl'}`}>
-            SignCut <span className={isCyber ? 'text-cyan-400' : 'text-blue-600'}>PRO</span>
-          </h1>
+          <div className="flex items-baseline gap-2">
+            <h1 className={`font-bold leading-none tracking-tight ${isCyber ? 'text-white font-mono text-lg' : 'text-slate-900 font-sans text-xl'}`}>
+              SignCut <span className={isCyber ? 'text-cyan-400' : 'text-blue-600'}>PRO</span>
+            </h1>
+            <span className={`text-[10px] font-medium ${isCyber ? 'text-cyan-500/70 font-mono' : 'text-slate-500 font-sans'}`}>
+              v{version}
+            </span>
+          </div>
           <span className={`text-[9px] uppercase tracking-[0.2em] mt-0.5 ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
             {isCyber ? 'VECTORIZE // SYS' : 'Digital Signature'}
           </span>
