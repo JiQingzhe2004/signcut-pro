@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { processSignatureRegions } from './services/imageProcessing';
+import { processSignatureRegions, recommendSensitivity } from './services/imageProcessing';
 import { ProcessedSignature, ProcessingStatus, SelectionBox, Theme } from './types';
 import { Button } from './components/Button';
 import { SignatureCard } from './components/SignatureCard';
 import { ImageEditor } from './components/ImageEditor';
 import { Logo } from './components/Logo';
+import { SignatureLightbox } from './components/SignatureLightbox';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<ProcessingStatus>(ProcessingStatus.IDLE);
@@ -25,6 +26,10 @@ const App: React.FC = () => {
   // Theme State
   const [theme, setTheme] = useState<Theme>('ios');
   const isCyber = theme === 'cyberpunk';
+
+  // Lightbox State
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
 
   // Scroll Header State
   const [showHeader, setShowHeader] = useState(true);
@@ -61,9 +66,19 @@ const App: React.FC = () => {
     
     // Load image to get dimensions, then go straight to editor (Empty state)
     const img = new Image();
-    img.onload = () => {
+    img.onload = async () => {
       setImgDims({ w: img.width, h: img.height });
       setDetectedBoxes([]); // No initial boxes
+      
+      // Auto-recommend sensitivity threshold
+      try {
+        const recommended = await recommendSensitivity(file);
+        setSensitivity(recommended);
+      } catch (e) {
+        console.warn('Failed to recommend sensitivity, using default', e);
+        // Keep default sensitivity
+      }
+      
       setStatus(ProcessingStatus.EDITING);
     };
     img.src = objectUrl;
@@ -87,16 +102,22 @@ const App: React.FC = () => {
 
     try {
       setStatus(ProcessingStatus.PROCESSING);
-      setDetectedBoxes(boxesToProcess); 
+      setDetectedBoxes(boxesToProcess);
+      setSignatures([]); // Clear previous results
       
-      const results = await processSignatureRegions(
+      // Stream processing: process one signature at a time
+      await processSignatureRegions(
         currentFile, 
         boxesToProcess, 
         sensitivity,
         outputSize.width,
-        outputSize.height
+        outputSize.height,
+        (signature, index, total) => {
+          // Add each processed signature immediately
+          setSignatures(prev => [...prev, signature]);
+        }
       );
-      setSignatures(results);
+      
       setStatus(ProcessingStatus.COMPLETED);
     } catch (e) {
       console.error(e);
@@ -111,21 +132,32 @@ const App: React.FC = () => {
      setIsRecomputing(true);
      
      try {
-       const results = await processSignatureRegions(
+       // For reprocessing, we update existing signatures in place
+       const existingSignatures = [...signatures];
+       let updateIndex = 0;
+       
+       await processSignatureRegions(
          currentFile, 
          detectedBoxes, 
          newSensitivity, 
          newWidth, 
-         newHeight
+         newHeight,
+         (newSig, index, total) => {
+           // Update existing signature at the same index
+           if (updateIndex < existingSignatures.length) {
+             const existing = existingSignatures[updateIndex];
+             setSignatures(prev => {
+               const updated = [...prev];
+               const idx = updated.findIndex(s => s.id === existing.id);
+               if (idx >= 0) {
+                 updated[idx] = { ...newSig, annotation: existing.annotation };
+               }
+               return updated;
+             });
+             updateIndex++;
+           }
+         }
        );
-       // Preserve annotations if ID matches
-       setSignatures(prev => {
-         return results.map(newSig => {
-           const existing = prev.find(p => p.id === newSig.id);
-           return existing ? { ...newSig, annotation: existing.annotation } : newSig;
-         });
-       });
-       // We do NOT change status to PROCESSING here, so the view stays stable
      } catch (e) {
        console.error(e);
        // Optional: Show toast error
@@ -420,11 +452,24 @@ const App: React.FC = () => {
                     signature={sig} 
                     index={idx} 
                     onUpdateAnnotation={handleUpdateAnnotation}
+                    onPreview={(index) => {
+                      setLightboxIndex(index);
+                      setLightboxOpen(true);
+                    }}
                     theme={theme}
                     isUpdating={isRecomputing}
                   />
                 ))}
               </div>
+
+              {/* Global Lightbox */}
+              <SignatureLightbox
+                signatures={signatures}
+                currentIndex={lightboxIndex}
+                isOpen={lightboxOpen}
+                onClose={() => setLightboxOpen(false)}
+                theme={theme}
+              />
 
               {signatures.length === 0 && (
                  <div className={`text-center py-16 rounded-2xl border-2 border-dashed mt-8 ${isCyber ? 'bg-slate-900/30 border-slate-800' : 'bg-white/40 border-slate-200'}`}>

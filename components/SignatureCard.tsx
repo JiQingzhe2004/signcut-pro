@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { ProcessedSignature, Theme } from '../types';
 import { Button } from './Button';
 
@@ -6,6 +6,7 @@ interface SignatureCardProps {
   signature: ProcessedSignature;
   index: number;
   onUpdateAnnotation: (id: string, text: string) => void;
+  onPreview: (index: number) => void;
   theme: Theme;
   isUpdating?: boolean;
 }
@@ -14,10 +15,10 @@ export const SignatureCard: React.FC<SignatureCardProps> = ({
   signature, 
   index, 
   onUpdateAnnotation,
+  onPreview,
   theme,
   isUpdating = false
 }) => {
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const isCyber = theme === 'cyberpunk';
 
   const handleDownload = () => {
@@ -78,7 +79,7 @@ export const SignatureCard: React.FC<SignatureCardProps> = ({
         </div>
 
         {/* Image Display */}
-        <div className={`${imageContainerClasses} touch-manipulation`} onClick={() => setIsPreviewOpen(true)} title="点击预览大图">
+        <div className={`${imageContainerClasses} touch-manipulation`} onClick={() => onPreview(index)} title="点击预览大图">
            {isCyber && (
              <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-cyan-900/20 to-transparent pointer-events-none"></div>
            )}
@@ -130,67 +131,6 @@ export const SignatureCard: React.FC<SignatureCardProps> = ({
         </div>
       </div>
 
-      {/* Full Screen Preview Modal */}
-      {isPreviewOpen && (
-        <div 
-          className="fixed inset-0 z-[100] flex items-center justify-center backdrop-blur-sm cursor-zoom-out animate-fade-in"
-          style={{
-            backgroundColor: isCyber ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.35)'
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            setIsPreviewOpen(false);
-          }}
-        >
-          {/* Close Button */}
-          <button 
-            onClick={() => setIsPreviewOpen(false)}
-            className={`absolute top-4 right-4 sm:top-8 sm:right-8 p-2.5 sm:p-2 rounded-full transition-all duration-300 z-[101] group/close touch-manipulation active:scale-95 ${
-              isCyber 
-                ? 'bg-slate-800/80 active:bg-slate-700/80 text-cyan-400 border border-cyan-500/30' 
-                : 'bg-white/90 active:bg-white text-slate-800 shadow-lg'
-            }`}
-          >
-            <svg className="w-6 h-6 sm:w-6 sm:h-6 group-active/close:rotate-90 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-
-          {/* Image Container */}
-          <div 
-            className="relative max-w-[95vw] sm:max-w-[90vw] max-h-[90vh] sm:max-h-[85vh] p-2 sm:p-1 animate-zoom-in"
-            onClick={(e) => e.stopPropagation()} 
-          >
-            <img 
-              src={signature.processedDataUrl} 
-              alt="Full Preview" 
-              className={`max-w-full max-h-[75vh] sm:max-h-[80vh] object-contain select-none shadow-2xl rounded-lg ${
-                isCyber 
-                  ? 'drop-shadow-[0_0_50px_rgba(6,182,212,0.3)] border border-cyan-500/20' 
-                  : 'drop-shadow-[0_0_50px_rgba(0,0,0,0.3)]'
-              }`}
-            />
-            {signature.annotation && (
-               <div className="mt-4 sm:mt-6 text-center animate-fade-in px-4">
-                  <span className={`inline-block px-4 sm:px-6 py-1.5 sm:py-2 rounded-full backdrop-blur-md font-medium text-sm sm:text-lg tracking-wide border ${
-                    isCyber 
-                      ? 'bg-cyan-950/50 border-cyan-500/30 text-cyan-400 font-mono' 
-                      : 'bg-white/90 border-slate-200 text-slate-800 font-sans shadow-lg'
-                  }`}>
-                    {signature.annotation}
-                  </span>
-               </div>
-            )}
-            <div className={`mt-3 sm:mt-4 text-center text-[10px] sm:text-xs ${
-              isCyber 
-                ? 'text-cyan-200 font-mono' 
-                : 'text-slate-600 font-sans'
-            }`}>
-               {signature.width}px × {signature.height}px
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 };
