@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { processSignatureRegions, recommendSensitivity } from './services/imageProcessing';
-import { ProcessedSignature, ProcessingStatus, SelectionBox, Theme } from './types';
+import { processSignatureRegions, recommendSensitivity, processExternalImage } from './services/imageProcessing';
+import { ProcessedSignature, ProcessingStatus, SelectionBox, Theme, ProcessingMode } from './types';
 import { Button } from './components/Button';
 import { SignatureCard } from './components/SignatureCard';
 import { ImageEditor } from './components/ImageEditor';
 import { Logo } from './components/Logo';
 import { SignatureLightbox } from './components/SignatureLightbox';
+import { extractSignatures } from './services/gradioService';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<ProcessingStatus>(ProcessingStatus.IDLE);
   const [isRecomputing, setIsRecomputing] = useState(false); // New state for background updates
   
+  const [processingMode, setProcessingMode] = useState<ProcessingMode>('local');
   const [signatures, setSignatures] = useState<ProcessedSignature[]>([]);
   const [sensitivity, setSensitivity] = useState<number>(20);
   // Default dimensions 452x224
@@ -75,7 +77,6 @@ const App: React.FC = () => {
         const recommended = await recommendSensitivity(file);
         setSensitivity(recommended);
       } catch (e) {
-        console.warn('Failed to recommend sensitivity, using default', e);
         // Keep default sensitivity
       }
       
@@ -84,11 +85,13 @@ const App: React.FC = () => {
     img.src = objectUrl;
   };
 
-  const handleProcessFromEditor = async (boxes: SelectionBox[]) => {
+  const handleProcessFromEditor = async (boxes: SelectionBox[], useAI: boolean = false) => {
     if (!currentFile) return;
     
-    let boxesToProcess = boxes;
+    // 1. Save History immediately
+    setDetectedBoxes(boxes);
 
+    let boxesToProcess = boxes;
     // Fallback: If no boxes drawn, use the entire image
     if (boxesToProcess.length === 0) {
       boxesToProcess = [{
@@ -100,9 +103,73 @@ const App: React.FC = () => {
       }];
     }
 
+    // 1. Check if using AI (Use AI button detected)
+    // We can determine this by checking if the boxes have any special flag or just by user intent
+    // But currently we rely on "Use AI" button passing a specific mode or we infer it?
+    // Actually, the "Use AI" button in ImageEditor calls onProcess([], true).
+    // So we should use the `useAI` flag passed to this function.
+
+    if (useAI) {
+      setProcessingMode('gradio');
+    } else {
+      setProcessingMode('local');
+    }
+
+    // 2. AI Mode (Gradio / External API)
+    if (useAI) {
+      try {
+        setStatus(ProcessingStatus.PROCESSING);
+        setSignatures([]);
+        
+        // Currently using Gradio service for AI extraction
+        // We now pass the detected boxes to the service to perform cropped extraction
+        // If detectedBoxes is empty or contains full-image, it will fall back to full processing (or 1 big crop)
+        
+        // Filter out full-image placeholder if mixed (though usually it's either specific boxes OR full image)
+        const validBoxes = boxes.filter(b => b.id !== 'full-image');
+        
+        // Use callback for incremental updates (Parallel / Asynchronous display)
+        await extractSignatures(currentFile, validBoxes, async (newItems) => {
+            for (const item of newItems) {
+                try {
+                    // Run through standard image processing pipeline
+                    const processedUrl = await processExternalImage(
+                        item.image.url, 
+                        sensitivity, 
+                        outputSize.width, 
+                        outputSize.height
+                    );
+    
+                    const newSig: ProcessedSignature = {
+                        id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                        originalDataUrl: item.image.url,
+                        processedDataUrl: processedUrl, 
+                        width: outputSize.width,
+                        height: outputSize.height,
+                        annotation: item.caption || `AI 签名`
+                    };
+    
+                    setSignatures(prev => [...prev, newSig]);
+                } catch (err) {
+                    // Ignore individual processing errors
+                }
+            }
+        });
+        
+        // Once all promises in extractSignatures resolve, we are done.
+        // Note: The image processing inside the callback might slightly trail behind if it's slow,
+        // but typically it's fast enough.
+        setStatus(ProcessingStatus.COMPLETED);
+      } catch (e) {
+        console.error(e);
+        setStatus(ProcessingStatus.ERROR);
+      }
+      return;
+    }
+
+    // 3. Standard Local Mode (OpenCV)
     try {
       setStatus(ProcessingStatus.PROCESSING);
-      setDetectedBoxes(boxesToProcess);
       setSignatures([]); // Clear previous results
       
       // Stream processing: process one signature at a time
@@ -305,7 +372,8 @@ const App: React.FC = () => {
           initialBoxes={detectedBoxes}
           originalWidth={imgDims.w}
           originalHeight={imgDims.h}
-          onConfirm={handleProcessFromEditor}
+          onConfirm={(boxes) => handleProcessFromEditor(boxes, false)}
+          onProcessWithAI={(boxes) => handleProcessFromEditor(boxes, true)}
           onCancel={handleReset}
           theme={theme}
         />
@@ -356,8 +424,13 @@ const App: React.FC = () => {
                 </div>
                 <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} />
               </label>
+
+
             </div>
           )}
+
+          {/* Testing Page */}
+
 
           {/* Processing States (Initial) */}
           {(status === ProcessingStatus.DETECTING || status === ProcessingStatus.PROCESSING) && (
@@ -381,28 +454,30 @@ const App: React.FC = () => {
               <div className={`${toolbarClass} p-4 sm:p-5 mb-6 sm:mb-10 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-4 sm:gap-6 sticky z-20 transition-all duration-500 ease-in-out ${showHeader ? 'top-20 sm:top-28' : 'top-4 sm:top-6'}`}>
                 
                 <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-4 sm:gap-8 w-full sm:w-auto">
-                  {/* Sensitivity Control */}
-                  <div className="flex items-center gap-3 sm:gap-4 flex-1 sm:flex-none">
-                    <span className={`text-xs font-bold uppercase whitespace-nowrap ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
-                      提取阈值
-                    </span>
-                    <div className="flex items-center gap-2 sm:gap-3 flex-1 sm:flex-none">
-                      <input 
-                        type="range" 
-                        min="5" 
-                        max="40" 
-                        value={sensitivity} 
-                        onChange={handleSensitivityChange}
-                        className={`flex-1 sm:w-32 h-2 sm:h-1.5 rounded-lg appearance-none cursor-pointer touch-manipulation ${isCyber ? 'bg-slate-700 accent-cyan-500' : 'bg-slate-200 accent-blue-500'}`}
-                      />
-                      <span className={`text-xs px-2.5 py-1 rounded font-medium min-w-[30px] text-center ${isCyber ? 'bg-slate-800 border border-slate-700 text-cyan-400 font-mono' : 'bg-white shadow-sm text-slate-600 font-sans'}`}>
-                        {sensitivity}
+                  {/* Sensitivity Control (Hidden in AI mode) */}
+                  {processingMode !== 'gradio' && (
+                    <div className="flex items-center gap-3 sm:gap-4 flex-1 sm:flex-none">
+                      <span className={`text-xs font-bold uppercase whitespace-nowrap ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
+                        提取阈值
                       </span>
+                      <div className="flex items-center gap-2 sm:gap-3 flex-1 sm:flex-none">
+                        <input 
+                          type="range" 
+                          min="5" 
+                          max="40" 
+                          value={sensitivity} 
+                          onChange={handleSensitivityChange}
+                          className={`flex-1 sm:w-32 h-2 sm:h-1.5 rounded-lg appearance-none cursor-pointer touch-manipulation ${isCyber ? 'bg-slate-700 accent-cyan-500' : 'bg-slate-200 accent-blue-500'}`}
+                        />
+                        <span className={`text-xs px-2.5 py-1 rounded font-medium min-w-[30px] text-center ${isCyber ? 'bg-slate-800 border border-slate-700 text-cyan-400 font-mono' : 'bg-white shadow-sm text-slate-600 font-sans'}`}>
+                          {sensitivity}
+                        </span>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Dimension Control */}
-                  <div className={`flex items-center gap-3 sm:gap-4 sm:pl-8 ${isCyber ? 'sm:border-l border-slate-800' : 'sm:border-l border-slate-200'}`}>
+                  <div className={`flex items-center gap-3 sm:gap-4 ${processingMode !== 'gradio' ? (isCyber ? 'sm:border-l border-slate-800 sm:pl-8' : 'sm:border-l border-slate-200 sm:pl-8') : ''}`}>
                     <span className={`text-xs font-bold uppercase whitespace-nowrap ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
                       {isCyber ? '分辨率矩阵' : '输出尺寸'}
                     </span>

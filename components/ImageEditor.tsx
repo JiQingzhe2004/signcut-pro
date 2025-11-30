@@ -9,6 +9,7 @@ interface ImageEditorProps {
   originalWidth: number;
   originalHeight: number;
   onConfirm: (boxes: SelectionBox[]) => void;
+  onProcessWithAI: (boxes: SelectionBox[]) => void;
   onCancel: () => void;
   theme: Theme;
 }
@@ -22,6 +23,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   originalWidth,
   originalHeight,
   onConfirm,
+  onProcessWithAI,
   onCancel,
   theme
 }) => {
@@ -417,8 +419,13 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
              <Button variant="ghost" onClick={onCancel} className="text-xs px-2 sm:px-3 py-2 touch-manipulation flex-1 sm:flex-none" theme={theme}>
                取消
              </Button>
+             
+             <Button variant="secondary" onClick={() => onProcessWithAI(boxes)} className="text-xs px-3 sm:px-4 py-2 min-w-[80px] sm:min-w-[90px] touch-manipulation flex-1 sm:flex-none border-orange-200 text-orange-700 hover:bg-orange-50" theme={theme}>
+               {isCyber ? 'AI 提取' : '使用 AI'}
+             </Button>
+
              <Button onClick={() => onConfirm(boxes)} className="text-xs px-3 sm:px-4 py-2 min-w-[80px] sm:min-w-[100px] touch-manipulation flex-1 sm:flex-none" theme={theme}>
-               {boxes.length === 0 ? '全图处理' : (isCyber ? '确认提取' : '确认选择')}
+               {boxes.length === 0 ? '本地处理' : (isCyber ? '标准提取' : '确认选择')}
              </Button>
            </div>
         </div>

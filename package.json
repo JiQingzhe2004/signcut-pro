@@ -1,7 +1,7 @@
 {
   "name": "signcut-pro",
   "private": true,
-  "version": "0.0.1",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,6 +15,7 @@
     "react-image-gallery": "^1.4.0"
   },
   "devDependencies": {
+    "@gradio/client": "^2.0.0",
     "@tailwindcss/postcss": "^4.1.17",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",

@@ -1,4 +1,3 @@
-
 import { ProcessedSignature, SelectionBox } from '../types';
 import { loadOpenCV } from './opencvLoader';
 
@@ -172,6 +171,7 @@ const fillSmallHoles = (binary: any, cv: any, maxHoleArea: number = 50): any => 
   const filled = binary.clone();
   
   // Calculate kernel size based on maxHoleArea (approximate)
+  // For small areas, use smaller kernel
   const kernelSize = maxHoleArea < 30 ? 3 : maxHoleArea < 100 ? 5 : 7;
   const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(kernelSize, kernelSize));
   const anchor = new cv.Point(-1, -1);
@@ -415,7 +415,7 @@ export const processSignatureRegions = async (
   return results;
 };
 
-const processSingleSignatureWithOpenCV = (
+export const processSingleSignatureWithOpenCV = (
   sourceCanvas: HTMLCanvasElement, 
   sensitivity: number,
   targetWidth: number,
@@ -428,19 +428,17 @@ const processSingleSignatureWithOpenCV = (
   let blurred = new cv.Mat();
   let kernel = new cv.Mat();
   let adaptiveBinary: any = null;
-  let otsuBinary: any = null;
-  let combinedBinary: any = null;
-  let cleanedBinary: any = null;
+  let processingBinary: any = null;
 
   try {
     // 1. Grayscale
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
 
-    // 2. Gaussian Blur (Denoise) - Apply blur first to reduce noise
+    // 2. Gaussian Blur (Denoise)
     const kSize = new cv.Size(5, 5);
     cv.GaussianBlur(gray, blurred, kSize, 0);
 
-    // 3. Calculate brightness for subtle threshold adjustment
+    // 3. Calculate brightness
     const brightness = calculateBrightness(blurred, cv);
     const baseC = brightness > 160 ? sensitivity + 2 : brightness < 90 ? sensitivity - 2 : sensitivity;
 
@@ -448,147 +446,84 @@ const processSingleSignatureWithOpenCV = (
     let blockSize = Math.floor(Math.min(src.cols, src.rows) / 8);
     if (blockSize % 2 === 0) blockSize++;
     if (blockSize < 31) blockSize = 31;
-    blockSize = Math.min(blockSize, Math.floor(Math.min(src.cols, src.rows) / 4));
     
     adaptiveBinary = new cv.Mat();
     cv.adaptiveThreshold(blurred, adaptiveBinary, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, blockSize, baseC);
-
-    // 5. Otsu Thresholding as complement (for better edge detection)
-    otsuBinary = applyOtsuThreshold(blurred, cv);
-
-    // 6. Combine adaptive and Otsu thresholds (keep pixels detected by both)
-    combinedBinary = combineThresholds(adaptiveBinary, otsuBinary, cv);
     
-    // Clean up temporary binaries
-    adaptiveBinary.delete();
-    otsuBinary.delete();
-    adaptiveBinary = null;
-    otsuBinary = null;
+    processingBinary = adaptiveBinary.clone();
 
-    // 7. Remove noise using connected component analysis
-    const imageArea = src.cols * src.rows;
-    const minNoiseArea = Math.max(5, Math.floor(imageArea * 0.0001)); // 0.01% of image area
-    cleanedBinary = removeNoiseByConnectedComponents(combinedBinary, cv, minNoiseArea);
-    combinedBinary.delete();
-    combinedBinary = null;
-
-    // 8. Very light morphological close to connect only tiny broken strokes
-    // Use minimal kernel and single iteration to preserve original stroke width
-    const kernelSize = Math.max(2, Math.floor(Math.min(src.cols, src.rows) / 200)); // Even smaller kernel
+    // 5. Basic noise removal (Open)
+    const kernelSize = 3;
     kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(kernelSize, kernelSize));
-    let anchor = new cv.Point(-1, -1);
-    // Single iteration with small kernel to minimize thickening
-    cv.morphologyEx(cleanedBinary, cleanedBinary, cv.MORPH_CLOSE, kernel, anchor, 1);
-    
-    // 9. Skip hole filling to preserve original stroke appearance
-    // (Hole filling can thicken strokes, so we skip it to maintain original width)
-    
-    // 10. Final noise removal (remove any remaining small artifacts)
-    const finalCleaned = removeNoiseByConnectedComponents(cleanedBinary, cv, minNoiseArea * 2);
-    cleanedBinary.delete();
-    cleanedBinary = null;
+    const anchor = new cv.Point(-1, -1);
+    cv.morphologyEx(processingBinary, processingBinary, cv.MORPH_OPEN, kernel, anchor, 1);
 
-    // 11. Vectorization Reconstruction (Simulated "Training" effect)
-    // Instead of using the binary mask directly, we reconstruct the signature using contours.
-    // This provides smooth, vector-like edges similar to digital whiteboards.
-
-    // Find contours on the cleaned binary mask
+    // --- Resizing and Centering Logic ---
+    let finalMat = new cv.Mat(targetHeight, targetWidth, cv.CV_8UC4, new cv.Scalar(255, 255, 255, 255));
+    
     const contours = new cv.MatVector();
     const hierarchy = new cv.Mat();
-    // Use RETR_CCOMP to handle holes (e.g. inside 'o', '8', '0')
-    // Hierarchy: [Next, Previous, First_Child, Parent]
-    cv.findContours(finalCleaned, contours, hierarchy, cv.RETR_CCOMP, cv.CHAIN_APPROX_SIMPLE);
-
-    // Create a high-res transparent canvas for reconstruction
-    // We draw on the original resolution first to capture details
-    let reconstructed = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, new cv.Scalar(0, 0, 0, 0));
-
-    // Vectorize and Draw
+    cv.findContours(processingBinary, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    
+    let minX = src.cols, minY = src.rows, maxX = 0, maxY = 0;
+    let hasContent = false;
+    
     for (let i = 0; i < contours.size(); ++i) {
-      // Check if it's a top-level contour (Ink Body)
-      // hierarchy.intPtr(0, i)[3] is the parent index. -1 means no parent (Top Level)
-      const parentIdx = hierarchy.intPtr(0, i)[3];
-      
-      if (parentIdx === -1) {
-        const contour = contours.get(i);
-        const approx = new cv.Mat();
-        
-        // Approximate contour to smooth out jagged edges (Simulate Vectorization)
-        // Epsilon controls smoothness. 0.001 * perimeter is a good balance.
-        const epsilon = 0.001 * cv.arcLength(contour, true);
-        cv.approxPolyDP(contour, approx, epsilon, true);
+        const rect = cv.boundingRect(contours.get(i));
+        if (rect.width * rect.height > 10) { 
+            minX = Math.min(minX, rect.x);
+            minY = Math.min(minY, rect.y);
+            maxX = Math.max(maxX, rect.x + rect.width);
+            maxY = Math.max(maxY, rect.y + rect.height);
+            hasContent = true;
+        }
+    }
+    
+    // Create RGBA from binary: 255(Ink) -> Black(0,0,0,255), 0(Bg) -> Transparent(0,0,0,0)
+    let tempRgba = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, new cv.Scalar(255, 255, 255, 0));
+    let black = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, new cv.Scalar(0, 0, 0, 255));
+    black.copyTo(tempRgba, processingBinary);
+    black.delete();
 
-        // Draw the smoothed contour filled with Black
-        // Create a temporary MatVector to pass to drawContours
-        const vec = new cv.MatVector();
-        vec.push_back(approx);
-        cv.drawContours(reconstructed, vec, 0, new cv.Scalar(0, 0, 0, 255), -1, cv.LINE_AA);
-        
-        vec.delete();
-        approx.delete();
-      }
+    let cropped: any;
+    if (hasContent) {
+        const rect = new cv.Rect(minX, minY, maxX - minX, maxY - minY);
+        cropped = tempRgba.roi(rect);
+    } else {
+        cropped = tempRgba;
     }
 
-    // Second Pass: Cut out the holes
-    for (let i = 0; i < contours.size(); ++i) {
-      const parentIdx = hierarchy.intPtr(0, i)[3];
-      
-      // If it has a parent, it's a hole inside the ink
-      if (parentIdx !== -1) {
-        const contour = contours.get(i);
-        const approx = new cv.Mat();
-        
-        const epsilon = 0.001 * cv.arcLength(contour, true);
-        cv.approxPolyDP(contour, approx, epsilon, true);
-
-        const vec = new cv.MatVector();
-        vec.push_back(approx);
-        
-        // "Erase" mode: Draw with alpha=0 (Transparent)
-        // We need to set composite mode. But OpenCV drawContours replaces pixels.
-        // Writing (0,0,0,0) effectively erases if we just overwrite.
-        cv.drawContours(reconstructed, vec, 0, new cv.Scalar(0, 0, 0, 0), -1, cv.LINE_AA);
-        
-        vec.delete();
-        approx.delete();
-      }
-    }
-
-    // Clean up contour data
-    contours.delete();
-    hierarchy.delete();
-    
-    // Use the reconstructed vector-like image as the source for resizing
-    // Note: reconstructed is RGBA (Transparent BG, Black Ink)
-    
-    // --- Resizing and Centering Logic ---
-    // We create a new Mat for the target size filled with Transparent (Whiteboard style)
-    // Use transparent (0,0,0,0) background
-    let finalMat = new cv.Mat(targetHeight, targetWidth, cv.CV_8UC4, new cv.Scalar(0, 0, 0, 0));
-    
-    // Calculate aspect ratio fit
+    // Calculate scaling
     const padding = Math.max(10, Math.min(targetWidth, targetHeight) * 0.05);
     const availW = targetWidth - padding * 2;
     const availH = targetHeight - padding * 2;
     
-    const scale = Math.min(availW / reconstructed.cols, availH / reconstructed.rows);
-    const dsize = new cv.Size(Math.round(reconstructed.cols * scale), Math.round(reconstructed.rows * scale));
+    const scale = Math.min(availW / cropped.cols, availH / cropped.rows);
+    const dsize = new cv.Size(Math.round(cropped.cols * scale), Math.round(cropped.rows * scale));
     
     let resized = new cv.Mat();
-    // Use INTER_AREA for high quality downscaling of the smooth vector lines
-    cv.resize(reconstructed, resized, dsize, 0, 0, cv.INTER_AREA);
-
-    // ROI (Region of Interest) copy
+    cv.resize(cropped, resized, dsize, 0, 0, cv.INTER_AREA);
+    
+    // Center on White Background
     const dx = Math.floor((targetWidth - dsize.width) / 2);
     const dy = Math.floor((targetHeight - dsize.height) / 2);
     
     let roi = finalMat.roi(new cv.Rect(dx, dy, dsize.width, dsize.height));
     
-    // Copy the resized signature to the center of finalMat
-    // Since resized is RGBA and finalMat is RGBA, simple copyTo works.
-    // However, we want to blend properly? 
-    // Since background is empty, copyTo is fine.
-    resized.copyTo(roi);
+    let channels = new cv.MatVector();
+    cv.split(resized, channels);
+    let alpha = channels.get(3);
+    
+    let blackInkResized = new cv.Mat(dsize.height, dsize.width, cv.CV_8UC4, new cv.Scalar(0, 0, 0, 255));
+    blackInkResized.copyTo(roi, alpha);
+    
+    // Cleanup
+    channels.delete(); alpha.delete(); blackInkResized.delete(); roi.delete(); 
+    if (hasContent) cropped.delete();
+    tempRgba.delete();
+    resized.delete();
+    contours.delete();
+    hierarchy.delete();
     
     // Output
     const destCanvas = document.createElement('canvas');
@@ -596,17 +531,144 @@ const processSingleSignatureWithOpenCV = (
     destCanvas.height = targetHeight;
     cv.imshow(destCanvas, finalMat);
 
-    // Cleanup Loop specific
-    reconstructed.delete(); resized.delete(); roi.delete(); finalMat.delete();
-    if (finalCleaned && !finalCleaned.isDeleted()) finalCleaned.delete();
-
+    finalMat.delete();
+    
     return destCanvas.toDataURL('image/png');
 
   } catch (e) {
     console.error("OpenCV processing error", e);
-    return sourceCanvas.toDataURL(); // Fallback
+    return sourceCanvas.toDataURL(); 
   } finally {
     src.delete(); dst.delete(); gray.delete(); blurred.delete();
     if (kernel && !kernel.isDeleted()) kernel.delete();
+    if (adaptiveBinary && !adaptiveBinary.isDeleted()) adaptiveBinary.delete();
+    if (processingBinary && !processingBinary.isDeleted()) processingBinary.delete();
   }
+};
+
+/**
+ * Simplified processing for AI-extracted signatures.
+ * Assumes the input is already a clean signature crop.
+ * Performs:
+ * 1. Binarization (Force Black Ink)
+ * 2. Transparent Background
+ * 3. Resizing/Centering
+ */
+export const processAISignatureWithOpenCV = (
+  sourceCanvas: HTMLCanvasElement,
+  targetWidth: number,
+  targetHeight: number,
+  cv: any
+): string => {
+  let src = cv.imread(sourceCanvas);
+  let gray = new cv.Mat();
+  let binary = new cv.Mat();
+  let rgba = new cv.Mat();
+  let resized = new cv.Mat();
+  let finalMat = new cv.Mat();
+  
+  try {
+    // 1. Convert to Grayscale
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+
+    // 2. Otsu Thresholding (Inverted)
+    // Finds the optimal threshold to separate ink (dark) from background (light)
+    // Result: Ink = 255 (White), Bg = 0 (Black)
+    cv.threshold(gray, binary, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+
+    // 3. Create Pure Black Ink on White Background
+    // Initialize with White Opaque (255, 255, 255, 255)
+    rgba = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, new cv.Scalar(255, 255, 255, 255));
+    
+    // Create a temporary Black image for the ink
+    let blackInk = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, new cv.Scalar(0, 0, 0, 255));
+    
+    // Copy Black Ink pixels where binary mask is active (Ink)
+    // binary: 255 (Ink) -> Copy from blackInk to rgba
+    // binary: 0 (Bg) -> Keep rgba as White
+    blackInk.copyTo(rgba, binary);
+    blackInk.delete();
+    
+    // 4. Resize and Center (Unified Size)
+    // Calculate aspect ratio fit
+    const padding = Math.max(10, Math.min(targetWidth, targetHeight) * 0.05);
+    const availW = targetWidth - padding * 2;
+    const availH = targetHeight - padding * 2;
+    
+    const scale = Math.min(availW / rgba.cols, availH / rgba.rows);
+    const dsize = new cv.Size(Math.round(rgba.cols * scale), Math.round(rgba.rows * scale));
+    
+    // Resize using INTER_AREA for quality
+    cv.resize(rgba, resized, dsize, 0, 0, cv.INTER_AREA);
+
+    // Create final canvas with White Background
+    finalMat = new cv.Mat(targetHeight, targetWidth, cv.CV_8UC4, new cv.Scalar(255, 255, 255, 255));
+    
+    // ROI copy
+    const dx = Math.floor((targetWidth - dsize.width) / 2);
+    const dy = Math.floor((targetHeight - dsize.height) / 2);
+    
+    let roi = finalMat.roi(new cv.Rect(dx, dy, dsize.width, dsize.height));
+    // Copy the resized signature onto the white background
+    // Note: resized already has white background from step 3, so simple copy is fine.
+    resized.copyTo(roi);
+    roi.delete();
+
+    // Output
+    const destCanvas = document.createElement('canvas');
+    destCanvas.width = targetWidth;
+    destCanvas.height = targetHeight;
+    cv.imshow(destCanvas, finalMat);
+
+    return destCanvas.toDataURL('image/png');
+
+  } catch (e) {
+    return sourceCanvas.toDataURL();
+  } finally {
+    src.delete(); gray.delete(); binary.delete(); rgba.delete();
+    resized.delete(); finalMat.delete();
+  }
+};
+
+/**
+ * Process an external image (e.g. from AI) using the simplified pipeline
+ */
+export const processExternalImage = async (
+  imageUrl: string,
+  sensitivity: number = 15, // Unused for AI mode now, kept for compatibility
+  outputWidth: number = 452,
+  outputHeight: number = 224
+): Promise<string> => {
+  await loadOpenCV();
+  const cv = window.cv;
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Failed to get canvas context'));
+        return;
+      }
+      
+      // Fill with white first to ensure consistent background for transparent inputs
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+      
+      try {
+        // Use the simplified AI processing pipeline
+        const result = processAISignatureWithOpenCV(canvas, outputWidth, outputHeight, cv);
+        resolve(result);
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = (e) => reject(new Error('Failed to load image'));
+    img.src = imageUrl;
+  });
 };

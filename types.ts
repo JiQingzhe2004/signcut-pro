@@ -34,13 +34,5 @@ export interface SelectionBox {
 
 export type Theme = 'cyberpunk' | 'ios';
 
-export type AIProvider = 'gemini' | 'zhipu';
+export type ProcessingMode = 'local' | 'gradio';
 
-export interface AISettings {
-  provider: AIProvider;
-  apiKey: string;
-  modelName: string;
-}
-
-export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash-image';
-export const DEFAULT_ZHIPU_MODEL = 'glm-4v-flash';
