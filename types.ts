@@ -30,9 +30,10 @@ export interface SelectionBox {
   y: number;
   width: number;
   height: number;
+  rotation?: number; // in degrees
 }
 
 export type Theme = 'cyberpunk' | 'ios';
 
-export type ProcessingMode = 'local' | 'gradio';
+export type ProcessingMode = 'local' | 'ai';
 

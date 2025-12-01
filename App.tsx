@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { processSignatureRegions, recommendSensitivity, processExternalImage } from './services/imageProcessing';
+import { processSignatureRegions, recommendSensitivity } from './services/imageProcessing';
+import { analyzeImageWithAI, getAIConfig, saveAIConfig, AIConfig } from './services/aiService';
 import { ProcessedSignature, ProcessingStatus, SelectionBox, Theme, ProcessingMode } from './types';
 import { Button } from './components/Button';
 import { SignatureCard } from './components/SignatureCard';
 import { ImageEditor } from './components/ImageEditor';
 import { Logo } from './components/Logo';
 import { SignatureLightbox } from './components/SignatureLightbox';
-import { extractSignatures } from './services/gradioService';
+import { AiHelpModal } from './components/AiHelpModal';
+
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<ProcessingStatus>(ProcessingStatus.IDLE);
@@ -38,6 +40,16 @@ const App: React.FC = () => {
   
   // Drag State
   const [isDragging, setIsDragging] = useState(false);
+
+  // AI Config State
+  const [aiConfig, setAiConfig] = useState<AIConfig>({ endpoint: '', apiKey: '', model: '' });
+  const [showAiConfig, setShowAiConfig] = useState(false);
+  const [showAiHelp, setShowAiHelp] = useState(false);
+
+  // Load AI Config on Mount
+  useEffect(() => {
+    setAiConfig(getAIConfig());
+  }, []);
 
   // Handle Scroll for Auto-hiding Header
   useEffect(() => {
@@ -113,7 +125,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleProcessFromEditor = async (boxes: SelectionBox[], useAI: boolean = false) => {
+  const handleProcessFromEditor = async (boxes: SelectionBox[], mode: 'local' | 'ai' = 'local') => {
     if (!currentFile) return;
     
     // 1. Save History immediately
@@ -131,65 +143,67 @@ const App: React.FC = () => {
       }];
     }
 
-    // 1. Check if using AI (Use AI button detected)
-    // We can determine this by checking if the boxes have any special flag or just by user intent
-    // But currently we rely on "Use AI" button passing a specific mode or we infer it?
-    // Actually, the "Use AI" button in ImageEditor calls onProcess([], true).
-    // So we should use the `useAI` flag passed to this function.
+    setProcessingMode(mode);
 
-    if (useAI) {
-      setProcessingMode('gradio');
-    } else {
-      setProcessingMode('local');
-    }
+    // 2. AI Mode
+    if (mode === 'ai') {
+      if (!aiConfig.apiKey) {
+        setShowAiConfig(true);
+        return;
+      }
 
-    // 2. AI Mode (Gradio / External API)
-    if (useAI) {
       try {
         setStatus(ProcessingStatus.PROCESSING);
         setSignatures([]);
         
-        // Currently using Gradio service for AI extraction
-        // We now pass the detected boxes to the service to perform cropped extraction
-        // If detectedBoxes is empty or contains full-image, it will fall back to full processing (or 1 big crop)
+        // Get the cropped image for the first box (assuming single selection for now, or loop)
+        // Currently AI analysis is done on the whole file or we can crop.
+        // To match the flow, let's crop the first box to send to AI for analysis
+        // Or send the whole file and ask it to focus on the box?
+        // Simpler: Send the cropped canvas.
+
+        const img = new Image();
+        if (originalImage) img.src = originalImage;
+        await new Promise(r => { if (img.complete) r(true); else { img.onload = () => r(true); img.onerror = () => r(true); }});
+
+        const box = boxesToProcess[0]; // Analyze the first box to get parameters
         
-        // Filter out full-image placeholder if mixed (though usually it's either specific boxes OR full image)
-        const validBoxes = boxes.filter(b => b.id !== 'full-image');
-        
-        // Use callback for incremental updates (Parallel / Asynchronous display)
-        await extractSignatures(currentFile, validBoxes, async (newItems) => {
-            for (const item of newItems) {
-                try {
-                    // Run through standard image processing pipeline
-                    const processedUrl = await processExternalImage(
-                        item.image.url, 
-                        sensitivity, 
-                        outputSize.width, 
-                        outputSize.height
-                    );
-    
-                    const newSig: ProcessedSignature = {
-                        id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                        originalDataUrl: item.image.url,
-                        processedDataUrl: processedUrl, 
-                        width: outputSize.width,
-                        height: outputSize.height,
-                        annotation: item.caption || `AI 签名`
-                    };
-    
-                    setSignatures(prev => [...prev, newSig]);
-                } catch (err) {
-                    // Ignore individual processing errors
-                }
-            }
-        });
-        
-        // Once all promises in extractSignatures resolve, we are done.
-        // Note: The image processing inside the callback might slightly trail behind if it's slow,
-        // but typically it's fast enough.
+        const canvas = document.createElement('canvas');
+        canvas.width = box.width;
+        canvas.height = box.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+             ctx.drawImage(img, box.x, box.y, box.width, box.height, 0, 0, box.width, box.height);
+             
+             // Convert canvas to blob
+             const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/jpeg'));
+             if (blob) {
+                 console.log("Sending to AI for analysis...");
+                 const analysis = await analyzeImageWithAI(blob);
+                 console.log("AI Suggested Sensitivity:", analysis.recommendedSensitivity);
+                 console.log("AI Reasoning:", analysis.reasoning);
+                 
+                 // Update sensitivity with AI's recommendation
+                 setSensitivity(analysis.recommendedSensitivity);
+                 
+                 // Now run the standard local processing with this new sensitivity
+                 // effectively "driving" the local algorithm with AI intelligence
+                 await processSignatureRegions(
+                    currentFile, 
+                    boxesToProcess, 
+                    analysis.recommendedSensitivity,
+                    outputSize.width,
+                    outputSize.height,
+                    (signature, index, total) => {
+                      setSignatures(prev => [...prev, { ...signature, annotation: `AI: ${analysis.reasoning.slice(0, 20)}...` }]);
+                    }
+                 );
+             }
+        }
         setStatus(ProcessingStatus.COMPLETED);
       } catch (e) {
-        console.error(e);
+        console.error("AI Processing Error", e);
+        alert("AI 处理失败: 请检查配置是否正确。");
         setStatus(ProcessingStatus.ERROR);
       }
       return;
@@ -229,8 +243,10 @@ const App: React.FC = () => {
      try {
        // For reprocessing, we update existing signatures in place
        const existingSignatures = [...signatures];
-       let updateIndex = 0;
        
+       // Whether in Local or AI mode, reprocessing always uses the local algorithm 
+       // with the updated parameters (sensitivity/size).
+       let updateIndex = 0;
        await processSignatureRegions(
          currentFile, 
          detectedBoxes, 
@@ -245,6 +261,7 @@ const App: React.FC = () => {
                const updated = [...prev];
                const idx = updated.findIndex(s => s.id === existing.id);
                if (idx >= 0) {
+                 // Keep the annotation (e.g., AI reasoning or user notes)
                  updated[idx] = { ...newSig, annotation: existing.annotation };
                }
                return updated;
@@ -365,6 +382,18 @@ const App: React.FC = () => {
             </div>
             
             <div className="flex items-center gap-2 sm:gap-4">
+              {/* Settings Button */}
+              <button 
+                onClick={() => setShowAiConfig(true)}
+                className={`p-2 sm:p-2.5 rounded-full transition-all touch-manipulation ${isCyber ? 'bg-slate-800 text-cyan-400 hover:bg-slate-700 active:scale-95' : 'bg-white text-slate-800 shadow-sm hover:shadow-md active:scale-95'}`}
+                title="设置 AI API"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
+
               {/* Theme Toggle */}
               <button 
                 onClick={toggleTheme}
@@ -400,8 +429,8 @@ const App: React.FC = () => {
           initialBoxes={detectedBoxes}
           originalWidth={imgDims.w}
           originalHeight={imgDims.h}
-          onConfirm={(boxes) => handleProcessFromEditor(boxes, false)}
-          onProcessWithAI={(boxes) => handleProcessFromEditor(boxes, true)}
+          onConfirm={(boxes) => handleProcessFromEditor(boxes, 'local')}
+          onProcessWithAI={(boxes) => handleProcessFromEditor(boxes, 'ai')}
           onCancel={handleReset}
           theme={theme}
         />
@@ -488,7 +517,7 @@ const App: React.FC = () => {
                 
                 <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-4 sm:gap-8 w-full sm:w-auto">
                   {/* Sensitivity Control (Hidden in AI mode) */}
-                  {processingMode !== 'gradio' && (
+                  {processingMode !== 'ai' && (
                     <div className="flex items-center gap-3 sm:gap-4 flex-1 sm:flex-none">
                       <span className={`text-xs font-bold uppercase whitespace-nowrap ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
                         提取阈值
@@ -508,9 +537,10 @@ const App: React.FC = () => {
                       </div>
                     </div>
                   )}
+                  
 
                   {/* Dimension Control */}
-                  <div className={`flex items-center gap-3 sm:gap-4 ${processingMode !== 'gradio' ? (isCyber ? 'sm:border-l border-slate-800 sm:pl-8' : 'sm:border-l border-slate-200 sm:pl-8') : ''}`}>
+                  <div className={`flex items-center gap-3 sm:gap-4 ${isCyber ? 'sm:border-l border-slate-800 sm:pl-8' : 'sm:border-l border-slate-200 sm:pl-8'}`}>
                     <span className={`text-xs font-bold uppercase whitespace-nowrap ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
                       {isCyber ? '分辨率矩阵' : '输出尺寸'}
                     </span>
@@ -617,6 +647,78 @@ const App: React.FC = () => {
             </p>
           </div>
         </footer>
+      )}
+
+      {/* AI Config Modal */}
+      {showAiConfig && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className={`p-6 rounded-2xl shadow-2xl w-96 max-w-[90%] ${isCyber ? 'bg-slate-900 border border-slate-800 text-white' : 'bg-white text-slate-900'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold">通用 AI 设置</h3>
+              <button 
+                onClick={() => setShowAiHelp(true)}
+                className={`p-1.5 rounded-full transition-colors ${isCyber ? 'hover:bg-slate-800 text-cyan-500' : 'hover:bg-slate-100 text-blue-500'}`}
+                title="查看配置帮助"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+            </div>
+            <p className={`text-sm mb-4 ${isCyber ? 'text-slate-400' : 'text-slate-500'}`}>
+              配置兼容 OpenAI 接口的 API 端点和密钥。
+              配置仅保存在本地浏览器。
+            </p>
+            
+            <div className="space-y-3">
+              <div>
+                <label className={`text-xs block mb-1 ${isCyber ? 'text-slate-500' : 'text-slate-500'}`}>API Endpoint</label>
+                <input 
+                  type="text" 
+                  value={aiConfig.endpoint}
+                  onChange={(e) => setAiConfig(prev => ({ ...prev, endpoint: e.target.value }))}
+                  placeholder="https://api.openai.com/v1/chat/completions"
+                  className={`w-full p-2 rounded-lg outline-none border text-sm ${isCyber ? 'bg-slate-950 border-slate-800 focus:border-cyan-500 text-white' : 'bg-slate-50 border-slate-200 focus:border-blue-500 text-slate-900'}`}
+                />
+              </div>
+
+              <div>
+                <label className={`text-xs block mb-1 ${isCyber ? 'text-slate-500' : 'text-slate-500'}`}>API Key</label>
+                <input 
+                  type="password" 
+                  value={aiConfig.apiKey}
+                  onChange={(e) => setAiConfig(prev => ({ ...prev, apiKey: e.target.value }))}
+                  placeholder="sk-..."
+                  className={`w-full p-2 rounded-lg outline-none border text-sm ${isCyber ? 'bg-slate-950 border-slate-800 focus:border-cyan-500 text-white' : 'bg-slate-50 border-slate-200 focus:border-blue-500 text-slate-900'}`}
+                />
+              </div>
+
+              <div>
+                <label className={`text-xs block mb-1 ${isCyber ? 'text-slate-500' : 'text-slate-500'}`}>Model Name</label>
+                <input 
+                  type="text" 
+                  value={aiConfig.model}
+                  onChange={(e) => setAiConfig(prev => ({ ...prev, model: e.target.value }))}
+                  placeholder="gpt-4o / gemini-1.5-flash / deepseek-chat"
+                  className={`w-full p-2 rounded-lg outline-none border text-sm ${isCyber ? 'bg-slate-950 border-slate-800 focus:border-cyan-500 text-white' : 'bg-slate-50 border-slate-200 focus:border-blue-500 text-slate-900'}`}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <Button variant="ghost" onClick={() => setShowAiConfig(false)} theme={theme}>取消</Button>
+              <Button onClick={() => {
+                saveAIConfig(aiConfig);
+                setShowAiConfig(false);
+              }} theme={theme}>保存</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Help Modal */}
+      {showAiHelp && (
+        <AiHelpModal onClose={() => setShowAiHelp(false)} theme={theme} />
       )}
     </div>
   );

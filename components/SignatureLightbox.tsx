@@ -18,10 +18,22 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
 }) => {
   const isCyber = theme === 'cyberpunk';
   const [activeIndex, setActiveIndex] = useState(currentIndex);
+  const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     setActiveIndex(currentIndex);
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
   }, [currentIndex, isOpen]);
+
+  // Reset zoom when changing images
+  useEffect(() => {
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+  }, [activeIndex]);
 
   // Prevent body scroll when lightbox is open
   useEffect(() => {
@@ -79,11 +91,58 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
     setActiveIndex(prev => (prev < signatures.length - 1 ? prev + 1 : 0));
   }, [signatures.length]);
 
-  // Prevent scroll on lightbox container
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
+  // Zoom and Pan handlers
+  const handleZoomIn = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setScale(prev => Math.min(prev + 0.5, 5));
+  };
+
+  const handleZoomOut = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setScale(prev => Math.max(prev - 0.5, 0.5));
+  };
+
+  const handleResetZoom = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+  };
+
+  const handleImageWheel = (e: React.WheelEvent) => {
     e.stopPropagation();
-  }, []);
+    // Allow normal scroll if not zoomed? No, we want to zoom.
+    if (e.ctrlKey || scale > 1 || true) { 
+      // Always zoom on wheel inside the image container
+      // But we removed preventDefault from passive listener? 
+      // This is a React event, it's fine to call preventDefault if it's not passive. 
+      // However, React 18 wheel events might be passive. 
+      // Let's just adjust scale.
+      const delta = e.deltaY * -0.001;
+      setScale(prev => Math.min(Math.max(prev + delta, 0.5), 5));
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (scale > 1) {
+      e.preventDefault();
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging && scale > 1) {
+      e.preventDefault();
+      setPosition({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
 
   if (!isOpen || signatures.length === 0) return null;
 
@@ -97,7 +156,8 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
           : 'bg-black/70'
       } backdrop-blur-md animate-fade-in overflow-hidden`}
       onClick={onClose}
-      onWheel={handleWheel}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
       onTouchMove={(e) => {
         // Prevent touch scrolling on background
         if (e.target === e.currentTarget) {
@@ -216,8 +276,50 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
           </>
         )}
 
+        {/* Zoom Controls */}
+        <div className={`absolute bottom-24 sm:bottom-32 right-4 sm:right-6 flex flex-col gap-2 z-[10000] ${
+          isCyber ? 'text-cyan-400' : 'text-slate-700'
+        }`}>
+          <button
+            onClick={handleZoomIn}
+            className={`p-2 rounded-full transition-all ${
+              isCyber ? 'bg-slate-900/80 border border-cyan-500/30 hover:bg-slate-800' : 'bg-white/90 shadow-lg hover:bg-white'
+            }`}
+            title="放大"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+          <button
+            onClick={handleZoomOut}
+            className={`p-2 rounded-full transition-all ${
+              isCyber ? 'bg-slate-900/80 border border-cyan-500/30 hover:bg-slate-800' : 'bg-white/90 shadow-lg hover:bg-white'
+            }`}
+            title="缩小"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+            </svg>
+          </button>
+          <button
+            onClick={handleResetZoom}
+            className={`p-2 rounded-full transition-all ${
+              isCyber ? 'bg-slate-900/80 border border-cyan-500/30 hover:bg-slate-800' : 'bg-white/90 shadow-lg hover:bg-white'
+            }`}
+            title="重置"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        </div>
+
         {/* Image Container - Maximized to fill available space */}
-        <div className="flex-1 w-full flex items-center justify-center min-h-0">
+        <div 
+          className="flex-1 w-full flex items-center justify-center min-h-0 overflow-hidden"
+          onWheel={handleImageWheel}
+        >
           <div 
             className={`relative w-full h-full max-w-[95vw] max-h-[calc(100vh-280px)] flex items-center justify-center ${
               isCyber ? 'p-4 sm:p-6' : 'p-2 sm:p-4'
@@ -226,14 +328,21 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
             <img
               src={currentSignature.processedDataUrl}
               alt={currentSignature.annotation || `签名 ${activeIndex + 1}`}
-              className="max-w-full max-h-full w-auto h-auto object-contain select-none"
+              className={`max-w-full max-h-full w-auto h-auto object-contain select-none transition-transform duration-100 ${
+                scale > 1 ? 'cursor-move' : 'cursor-default'
+              }`}
               style={{
                 // Fill available space while maintaining aspect ratio
                 maxWidth: '100%',
                 maxHeight: '100%',
                 width: 'auto',
-                height: 'auto'
+                height: 'auto',
+                transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`
               }}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              draggable={false}
             />
             
             {/* Image Glow Effect (Cyber Theme) */}
@@ -245,7 +354,7 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
 
         {/* Thumbnail Strip (if multiple signatures) - Fixed at bottom */}
         {signatures.length > 1 && (
-          <div className="absolute bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 w-full max-w-4xl">
+          <div className="absolute bottom-8 sm:bottom-12 left-1/2 -translate-x-1/2 w-full max-w-4xl">
             <style>{`
               .thumbnail-scroll::-webkit-scrollbar {
                 display: none;

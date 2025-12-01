@@ -14,7 +14,7 @@ interface ImageEditorProps {
   theme: Theme;
 }
 
-type InteractionMode = 'IDLE' | 'DRAWING' | 'MOVING' | 'RESIZING';
+type InteractionMode = 'IDLE' | 'DRAWING' | 'MOVING' | 'RESIZING' | 'ROTATING';
 type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 export const ImageEditor: React.FC<ImageEditorProps> = ({
@@ -37,6 +37,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   // Interaction State
   const [startPoint, setStartPoint] = useState<{ x: number, y: number } | null>(null);
   const [activeHandle, setActiveHandle] = useState<ResizeHandle | null>(null);
+  const [startRotation, setStartRotation] = useState<number>(0);
   
   // Temp state for drawing/modifying
   const [tempBox, setTempBox] = useState<SelectionBox | null>(null);
@@ -145,6 +146,21 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
     setInitialBoxSnapshot({ ...box });
   };
 
+  // 3.5 Mouse Down on Rotate Handle (Start Rotating)
+  const handleRotateMouseDown = (e: React.MouseEvent, id: string) => {
+    if (isPreviewMode) return;
+    e.stopPropagation();
+    e.preventDefault();
+
+    setSelectedId(id);
+    const box = boxes.find(b => b.id === id);
+    if (!box) return;
+
+    setMode('ROTATING');
+    setStartPoint(getRelativeCoords(e));
+    setInitialBoxSnapshot({ ...box });
+  };
+
   // 4. Global Mouse/Touch Move
   useEffect(() => {
     const handleWindowMouseMove = (e: MouseEvent | TouchEvent) => {
@@ -183,14 +199,48 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
         newWidth = clamp(newWidth, 0, maxWidth);
         newHeight = clamp(newHeight, 0, maxHeight);
         
+        setBoxes(prev => {
+            // If we are drawing, we might need to create the box first? 
+            // The logic in original code was modifying tempBox, not boxes.
+            return prev; 
+        });
         setTempBox({
           ...tempBox,
           x: newX,
           y: newY,
           width: newWidth,
-          height: newHeight
+          height: newHeight,
+          rotation: 0
         });
       } 
+      else if (mode === 'ROTATING' && initialBoxSnapshot) {
+         const cx = initialBoxSnapshot.x + initialBoxSnapshot.width / 2;
+         const cy = initialBoxSnapshot.y + initialBoxSnapshot.height / 2;
+         
+         const getAngle = (p: {x: number, y: number}) => Math.atan2(p.y - cy, p.x - cx) * 180 / Math.PI;
+         
+         const angleStart = getAngle(startPoint);
+         const angleCurrent = getAngle(current);
+         const deltaAngle = angleCurrent - angleStart;
+         
+         let newRotation = (initialBoxSnapshot.rotation || 0) + deltaAngle;
+         
+         // Rotation Snapping Logic
+         const ROTATION_SNAP_THRESHOLD = 5; // degrees
+         const ROTATION_SNAP_INTERVAL = 45; // degrees
+         
+         const nearestMultiple = Math.round(newRotation / ROTATION_SNAP_INTERVAL) * ROTATION_SNAP_INTERVAL;
+         
+         if (Math.abs(newRotation - nearestMultiple) < ROTATION_SNAP_THRESHOLD) {
+           newRotation = nearestMultiple;
+         }
+         
+         setBoxes(prev => prev.map(b => 
+           b.id === selectedId 
+             ? { ...b, rotation: newRotation }
+             : b
+         ));
+      }
       else if (mode === 'MOVING' && initialBoxSnapshot) {
         const rawX = initialBoxSnapshot.x + deltaX;
         const rawY = initialBoxSnapshot.y + deltaY;
@@ -420,8 +470,8 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
                取消
              </Button>
              
-             <Button variant="secondary" onClick={() => onProcessWithAI(boxes)} className="text-xs px-3 sm:px-4 py-2 min-w-[80px] sm:min-w-[90px] touch-manipulation flex-1 sm:flex-none border-orange-200 text-orange-700 hover:bg-orange-50" theme={theme}>
-               {isCyber ? 'AI 提取' : '使用 AI'}
+             <Button variant="secondary" onClick={() => onProcessWithAI(boxes)} className="text-xs px-3 sm:px-4 py-2 min-w-[80px] sm:min-w-[90px] touch-manipulation flex-1 sm:flex-none border-purple-200 text-purple-700 hover:bg-purple-50" theme={theme}>
+               {isCyber ? 'AI 加速' : 'AI 处理'}
              </Button>
 
              <Button onClick={() => onConfirm(boxes)} className="text-xs px-3 sm:px-4 py-2 min-w-[80px] sm:min-w-[100px] touch-manipulation flex-1 sm:flex-none" theme={theme}>
@@ -462,6 +512,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
                onMouseDown={(e) => handleBoxMouseDown(e, box.id)}
                onRemove={() => removeBox(box.id)}
                onResizeStart={handleResizeMouseDown}
+               onRotateStart={handleRotateMouseDown}
                originalWidth={originalWidth}
                originalHeight={originalHeight}
                theme={theme}
@@ -499,13 +550,14 @@ interface BoxOverlayProps {
   onMouseDown: (e: React.MouseEvent) => void;
   onRemove: () => void;
   onResizeStart: (e: React.MouseEvent, id: string, handle: ResizeHandle) => void;
+  onRotateStart: (e: React.MouseEvent, id: string) => void;
   originalWidth: number;
   originalHeight: number;
   theme: Theme;
 }
 
 const BoxOverlay: React.FC<BoxOverlayProps> = ({ 
-  box, index, isSelected, showControls, onMouseDown, onRemove, onResizeStart, originalWidth, originalHeight, theme 
+  box, index, isSelected, showControls, onMouseDown, onRemove, onResizeStart, onRotateStart, originalWidth, originalHeight, theme 
 }) => {
   const isCyber = theme === 'cyberpunk';
   
@@ -525,6 +577,10 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
   // Resize Handles
   const handles: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
+  // Check if rotation is snapped (close to multiple of 45)
+  const currentRotation = box.rotation || 0;
+  const isSnapped = Math.abs(currentRotation % 45) < 0.1;
+
   return (
     <div
       className={`absolute border-2 cursor-move transition-colors selection-box ${borderClass} ${bgClass}`}
@@ -533,6 +589,7 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
         top: `${(box.y / originalHeight) * 100}%`,
         width: `${(box.width / originalWidth) * 100}%`,
         height: `${(box.height / originalHeight) * 100}%`,
+        transform: `rotate(${box.rotation || 0}deg)`,
       }}
       onMouseDown={onMouseDown}
     >
@@ -542,6 +599,37 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
       >
         {isCyber ? `TARGET_${String(index + 1).padStart(2, '0')}` : `签名 ${index + 1}`}
       </div>
+
+      {/* Rotation Handle */}
+      {isSelected && showControls && (
+        <div
+          className={`absolute -top-8 left-1/2 -translate-x-1/2 w-6 h-6 flex items-center justify-center rounded-full cursor-pointer touch-manipulation transition-colors ${
+            isSnapped 
+              ? (isCyber ? 'bg-green-500 text-black border border-green-400 shadow-[0_0_10px_lime]' : 'bg-green-500 text-white border border-green-600 shadow-md')
+              : (isCyber ? 'bg-cyan-900/80 text-cyan-400 border border-cyan-500' : 'bg-white text-blue-600 border border-blue-500 shadow-sm')
+          }`}
+          style={{ cursor: 'grab' }}
+          onMouseDown={(e) => onRotateStart(e, box.id)}
+          onTouchStart={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            if (e.touches.length === 1) {
+              const syntheticEvent = {
+                ...e,
+                clientX: e.touches[0].clientX,
+                clientY: e.touches[0].clientY,
+                stopPropagation: () => e.stopPropagation(),
+                preventDefault: () => e.preventDefault()
+              } as any;
+              onRotateStart(syntheticEvent, box.id);
+            }
+          }}
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </div>
+      )}
 
       {/* Close Button */}
       {isSelected && showControls && (

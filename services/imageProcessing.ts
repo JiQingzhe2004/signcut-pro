@@ -389,7 +389,25 @@ export const processSignatureRegions = async (
     cropCanvas.height = box.height;
     const cropCtx = cropCanvas.getContext('2d');
     if (!cropCtx) continue;
-    cropCtx.drawImage(canvas, box.x, box.y, box.width, box.height, 0, 0, box.width, box.height);
+
+    if (box.rotation) {
+      const cx = box.x + box.width / 2;
+      const cy = box.y + box.height / 2;
+      
+      cropCtx.save();
+      // Translate to center of crop canvas
+      cropCtx.translate(box.width / 2, box.height / 2);
+      // Rotate (negative because we are transforming the context to map source pixels)
+      cropCtx.rotate(-box.rotation * Math.PI / 180);
+      // Translate back relative to source image center
+      cropCtx.translate(-cx, -cy);
+      
+      // Draw the entire source image
+      cropCtx.drawImage(canvas, 0, 0);
+      cropCtx.restore();
+    } else {
+      cropCtx.drawImage(canvas, box.x, box.y, box.width, box.height, 0, 0, box.width, box.height);
+    }
     
     const rawUrl = cropCanvas.toDataURL('image/png');
 
