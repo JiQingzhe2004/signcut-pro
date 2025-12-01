@@ -429,6 +429,11 @@ export const processSingleSignatureWithOpenCV = (
   let kernel = new cv.Mat();
   let adaptiveBinary: any = null;
   let processingBinary: any = null;
+  let contours: any = null;
+  let hierarchy: any = null;
+  let softMask: any = null;
+  let finalMat: any = null;
+  let tempRgba: any = null;
 
   try {
     // 1. Grayscale
@@ -457,20 +462,61 @@ export const processSingleSignatureWithOpenCV = (
     kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(kernelSize, kernelSize));
     const anchor = new cv.Point(-1, -1);
     cv.morphologyEx(processingBinary, processingBinary, cv.MORPH_OPEN, kernel, anchor, 1);
+    
+    // --- Morphological Weight Adjustment (Based on Sensitivity) ---
+    // Allows user to thicken (dilate) or thin (erode) the signature
+    // Low sensitivity (<12) -> Thicken
+    // High sensitivity (>28) -> Thin
+    let morphKernel = null;
+    if (sensitivity < 12) {
+        // Thicken lines
+        morphKernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
+        cv.dilate(processingBinary, processingBinary, morphKernel);
+    } else if (sensitivity > 28) {
+        // Thin lines
+        morphKernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
+        cv.erode(processingBinary, processingBinary, morphKernel);
+    }
+    if (morphKernel) morphKernel.delete();
+
+    // --- Anti-aliasing step ---
+    // Create a soft mask by blurring the binary image
+    softMask = new cv.Mat();
+    cv.GaussianBlur(processingBinary, softMask, new cv.Size(3, 3), 0);
 
     // --- Resizing and Centering Logic ---
-    let finalMat = new cv.Mat(targetHeight, targetWidth, cv.CV_8UC4, new cv.Scalar(255, 255, 255, 255));
+    finalMat = new cv.Mat(targetHeight, targetWidth, cv.CV_8UC4, new cv.Scalar(255, 255, 255, 255));
     
-    const contours = new cv.MatVector();
-    const hierarchy = new cv.Mat();
+    contours = new cv.MatVector();
+    hierarchy = new cv.Mat();
     cv.findContours(processingBinary, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
     
     let minX = src.cols, minY = src.rows, maxX = 0, maxY = 0;
     let hasContent = false;
     
+    // Smart cropping: Filter out noise by comparing to the largest contour
+    let maxContourArea = 0;
+    const contourStats = []; 
+    
     for (let i = 0; i < contours.size(); ++i) {
-        const rect = cv.boundingRect(contours.get(i));
-        if (rect.width * rect.height > 10) { 
+        const contour = contours.get(i);
+        const area = cv.contourArea(contour);
+        const rect = cv.boundingRect(contour);
+        contourStats.push({ area, rect });
+        
+        if (area > maxContourArea) {
+            maxContourArea = area;
+        }
+        contour.delete(); // Prevent memory leak
+    }
+    
+    // Threshold: 1% of max area or 20px absolute minimum
+    const areaThreshold = Math.max(20, maxContourArea * 0.01);
+
+    for (let i = 0; i < contourStats.length; ++i) {
+        const { area, rect } = contourStats[i];
+        
+        if (area > areaThreshold) { 
             minX = Math.min(minX, rect.x);
             minY = Math.min(minY, rect.y);
             maxX = Math.max(maxX, rect.x + rect.width);
@@ -479,15 +525,28 @@ export const processSingleSignatureWithOpenCV = (
         }
     }
     
-    // Create RGBA from binary: 255(Ink) -> Black(0,0,0,255), 0(Bg) -> Transparent(0,0,0,0)
-    let tempRgba = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, new cv.Scalar(255, 255, 255, 0));
-    let black = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, new cv.Scalar(0, 0, 0, 255));
-    black.copyTo(tempRgba, processingBinary);
-    black.delete();
+    // Create RGBA from soft mask: Black Ink with Alpha from softMask
+    // This ensures anti-aliased edges
+    tempRgba = new cv.Mat();
+    let channels = new cv.MatVector();
+    let blackPlane = new cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
+    channels.push_back(blackPlane); // R=0
+    channels.push_back(blackPlane); // G=0
+    channels.push_back(blackPlane); // B=0
+    channels.push_back(softMask);   // A=softMask
+    cv.merge(channels, tempRgba);
+    blackPlane.delete();
 
     let cropped: any;
     if (hasContent) {
-        const rect = new cv.Rect(minX, minY, maxX - minX, maxY - minY);
+        // Add small padding to ensure anti-aliased edges (from blur) are not cut off
+        const blurPad = 4;
+        const cropX = Math.max(0, minX - blurPad);
+        const cropY = Math.max(0, minY - blurPad);
+        const cropW = Math.min(src.cols - cropX, (maxX - minX) + blurPad * 2);
+        const cropH = Math.min(src.rows - cropY, (maxY - minY) + blurPad * 2);
+
+        const rect = new cv.Rect(cropX, cropY, cropW, cropH);
         cropped = tempRgba.roi(rect);
     } else {
         cropped = tempRgba;
@@ -502,7 +561,9 @@ export const processSingleSignatureWithOpenCV = (
     const dsize = new cv.Size(Math.round(cropped.cols * scale), Math.round(cropped.rows * scale));
     
     let resized = new cv.Mat();
-    cv.resize(cropped, resized, dsize, 0, 0, cv.INTER_AREA);
+    // Use INTER_AREA for downscaling (better quality), INTER_CUBIC for upscaling (smooth edges)
+    let interpolation = scale > 1 ? cv.INTER_CUBIC : cv.INTER_AREA;
+    cv.resize(cropped, resized, dsize, 0, 0, interpolation);
     
     // Center on White Background
     const dx = Math.floor((targetWidth - dsize.width) / 2);
@@ -510,15 +571,36 @@ export const processSingleSignatureWithOpenCV = (
     
     let roi = finalMat.roi(new cv.Rect(dx, dy, dsize.width, dsize.height));
     
-    let channels = new cv.MatVector();
-    cv.split(resized, channels);
-    let alpha = channels.get(3);
+    // Composite Black Ink onto White Background
+    // We have Black Ink with Alpha. Target is White.
+    // Result = Ink * Alpha + Bg * (1 - Alpha)
+    // Since Ink is Black (0): Result = 0 + 255 * (1 - Alpha) = 255 - 255 * Alpha
+    // So we just need to invert the alpha channel and use it as grayscale intensity
     
-    let blackInkResized = new cv.Mat(dsize.height, dsize.width, cv.CV_8UC4, new cv.Scalar(0, 0, 0, 255));
-    blackInkResized.copyTo(roi, alpha);
+    let resizedChannels = new cv.MatVector();
+    cv.split(resized, resizedChannels);
+    let alpha = resizedChannels.get(3);
+    
+    let inverseAlpha = new cv.Mat();
+    cv.bitwise_not(alpha, inverseAlpha); // 0(Transparent) -> 255(White), 255(Ink) -> 0(Black)
+    
+    let finalChannels = new cv.MatVector();
+    finalChannels.push_back(inverseAlpha); // R
+    finalChannels.push_back(inverseAlpha); // G
+    finalChannels.push_back(inverseAlpha); // B
+    let opaque = new cv.Mat(dsize.height, dsize.width, cv.CV_8UC1, new cv.Scalar(255));
+    finalChannels.push_back(opaque);       // A
+    
+    let blended = new cv.Mat();
+    cv.merge(finalChannels, blended);
+    
+    blended.copyTo(roi);
     
     // Cleanup
-    channels.delete(); alpha.delete(); blackInkResized.delete(); roi.delete(); 
+    channels.delete();
+    resizedChannels.delete(); alpha.delete(); inverseAlpha.delete();
+    finalChannels.delete(); opaque.delete(); blended.delete();
+    roi.delete(); softMask.delete();
     if (hasContent) cropped.delete();
     tempRgba.delete();
     resized.delete();
@@ -543,6 +625,13 @@ export const processSingleSignatureWithOpenCV = (
     if (kernel && !kernel.isDeleted()) kernel.delete();
     if (adaptiveBinary && !adaptiveBinary.isDeleted()) adaptiveBinary.delete();
     if (processingBinary && !processingBinary.isDeleted()) processingBinary.delete();
+    
+    // Additional cleanup for smart cropping & anti-aliasing vars
+    if (contours && !contours.isDeleted()) contours.delete();
+    if (hierarchy && !hierarchy.isDeleted()) hierarchy.delete();
+    if (softMask && !softMask.isDeleted()) softMask.delete();
+    if (finalMat && !finalMat.isDeleted()) finalMat.delete();
+    if (tempRgba && !tempRgba.isDeleted()) tempRgba.delete();
   }
 };
 
@@ -563,9 +652,12 @@ export const processAISignatureWithOpenCV = (
   let src = cv.imread(sourceCanvas);
   let gray = new cv.Mat();
   let binary = new cv.Mat();
-  let rgba = new cv.Mat();
   let resized = new cv.Mat();
-  let finalMat = new cv.Mat();
+  let finalMat: any = null;
+  let contours: any = null;
+  let hierarchy: any = null;
+  let softMask: any = null;
+  let tempRgba: any = null;
   
   try {
     // 1. Convert to Grayscale
@@ -576,30 +668,95 @@ export const processAISignatureWithOpenCV = (
     // Result: Ink = 255 (White), Bg = 0 (Black)
     cv.threshold(gray, binary, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
 
-    // 3. Create Pure Black Ink on White Background
-    // Initialize with White Opaque (255, 255, 255, 255)
-    rgba = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, new cv.Scalar(255, 255, 255, 255));
+    // --- Morphological Weight Adjustment (Kept compatible with sensitivity param if needed later) ---
+    // Currently AI mode doesn't use sensitivity actively, but we can apply a fixed cleanup
+    // Or if we passed sensitivity, we could use it. 
+    // For now, we just do a light open to remove noise.
+    let morphKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+    cv.morphologyEx(binary, binary, cv.MORPH_OPEN, morphKernel);
+    morphKernel.delete();
+
+    // --- Smart Cropping Step ---
+    // Find contours to detect actual content bounds
+    contours = new cv.MatVector();
+    hierarchy = new cv.Mat();
+    cv.findContours(binary, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+    let minX = src.cols, minY = src.rows, maxX = 0, maxY = 0;
+    let hasContent = false;
+    let maxContourArea = 0;
+    const contourStats = [];
+
+    for (let i = 0; i < contours.size(); ++i) {
+        const contour = contours.get(i);
+        const area = cv.contourArea(contour);
+        const rect = cv.boundingRect(contour);
+        contourStats.push({ area, rect });
+        if (area > maxContourArea) maxContourArea = area;
+        contour.delete(); // Prevent memory leak
+    }
+
+    // Threshold: 1% of max area or 20px absolute minimum
+    const areaThreshold = Math.max(20, maxContourArea * 0.01);
+
+    for (let i = 0; i < contourStats.length; ++i) {
+        const { area, rect } = contourStats[i];
+        if (area > areaThreshold) {
+            minX = Math.min(minX, rect.x);
+            minY = Math.min(minY, rect.y);
+            maxX = Math.max(maxX, rect.x + rect.width);
+            maxY = Math.max(maxY, rect.y + rect.height);
+            hasContent = true;
+        }
+    }
+
+    // --- Anti-aliasing step ---
+    // Create a soft mask by blurring the binary image
+    softMask = new cv.Mat();
+    cv.GaussianBlur(binary, softMask, new cv.Size(3, 3), 0);
+
+    // 3. Create RGBA with Soft Mask (Black Ink, Transparent Bg)
+    tempRgba = new cv.Mat();
+    let channels = new cv.MatVector();
+    let blackPlane = new cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
+    channels.push_back(blackPlane); // R=0
+    channels.push_back(blackPlane); // G=0
+    channels.push_back(blackPlane); // B=0
+    channels.push_back(softMask);   // A=softMask
+    cv.merge(channels, tempRgba);
+    blackPlane.delete();
     
-    // Create a temporary Black image for the ink
-    let blackInk = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, new cv.Scalar(0, 0, 0, 255));
-    
-    // Copy Black Ink pixels where binary mask is active (Ink)
-    // binary: 255 (Ink) -> Copy from blackInk to rgba
-    // binary: 0 (Bg) -> Keep rgba as White
-    blackInk.copyTo(rgba, binary);
-    blackInk.delete();
-    
+    // Crop RGBA to content bounds
+    let cropped;
+    if (hasContent) {
+        // Add small padding to preserve soft edges
+        const blurPad = 4;
+        const cropX = Math.max(0, minX - blurPad);
+        const cropY = Math.max(0, minY - blurPad);
+        const cropW = Math.min(src.cols - cropX, (maxX - minX) + blurPad * 2);
+        const cropH = Math.min(src.rows - cropY, (maxY - minY) + blurPad * 2);
+        
+        const rect = new cv.Rect(cropX, cropY, cropW, cropH);
+        cropped = tempRgba.roi(rect);
+    } else {
+        cropped = tempRgba;
+    }
+
     // 4. Resize and Center (Unified Size)
     // Calculate aspect ratio fit
     const padding = Math.max(10, Math.min(targetWidth, targetHeight) * 0.05);
     const availW = targetWidth - padding * 2;
     const availH = targetHeight - padding * 2;
     
-    const scale = Math.min(availW / rgba.cols, availH / rgba.rows);
-    const dsize = new cv.Size(Math.round(rgba.cols * scale), Math.round(rgba.rows * scale));
+    const scale = Math.min(availW / cropped.cols, availH / cropped.rows);
+    const dsize = new cv.Size(Math.round(cropped.cols * scale), Math.round(cropped.rows * scale));
     
-    // Resize using INTER_AREA for quality
-    cv.resize(rgba, resized, dsize, 0, 0, cv.INTER_AREA);
+    // Resize using INTER_AREA for quality, INTER_CUBIC for upscaling
+    let interpolation = scale > 1 ? cv.INTER_CUBIC : cv.INTER_AREA;
+    cv.resize(cropped, resized, dsize, 0, 0, interpolation);
+
+    // Cleanup
+    if (hasContent) cropped.delete();
 
     // Create final canvas with White Background
     finalMat = new cv.Mat(targetHeight, targetWidth, cv.CV_8UC4, new cv.Scalar(255, 255, 255, 255));
@@ -609,10 +766,32 @@ export const processAISignatureWithOpenCV = (
     const dy = Math.floor((targetHeight - dsize.height) / 2);
     
     let roi = finalMat.roi(new cv.Rect(dx, dy, dsize.width, dsize.height));
-    // Copy the resized signature onto the white background
-    // Note: resized already has white background from step 3, so simple copy is fine.
-    resized.copyTo(roi);
-    roi.delete();
+    
+    // Composite Black Ink onto White Background using Alpha from resized image
+    let resizedChannels = new cv.MatVector();
+    cv.split(resized, resizedChannels);
+    let alpha = resizedChannels.get(3);
+    
+    let inverseAlpha = new cv.Mat();
+    cv.bitwise_not(alpha, inverseAlpha); // 0(Transparent) -> 255(White), 255(Ink) -> 0(Black)
+    
+    let finalChannels = new cv.MatVector();
+    finalChannels.push_back(inverseAlpha); // R
+    finalChannels.push_back(inverseAlpha); // G
+    finalChannels.push_back(inverseAlpha); // B
+    let opaque = new cv.Mat(dsize.height, dsize.width, cv.CV_8UC1, new cv.Scalar(255));
+    finalChannels.push_back(opaque);       // A
+    
+    let blended = new cv.Mat();
+    cv.merge(finalChannels, blended);
+    
+    blended.copyTo(roi);
+    
+    // Cleanup
+    channels.delete();
+    resizedChannels.delete(); alpha.delete(); inverseAlpha.delete();
+    finalChannels.delete(); opaque.delete(); blended.delete();
+    roi.delete(); softMask.delete();
 
     // Output
     const destCanvas = document.createElement('canvas');
@@ -625,8 +804,13 @@ export const processAISignatureWithOpenCV = (
   } catch (e) {
     return sourceCanvas.toDataURL();
   } finally {
-    src.delete(); gray.delete(); binary.delete(); rgba.delete();
-    resized.delete(); finalMat.delete();
+    src.delete(); gray.delete(); binary.delete(); 
+    if (resized && !resized.isDeleted()) resized.delete();
+    if (finalMat && !finalMat.isDeleted()) finalMat.delete();
+    if (contours && !contours.isDeleted()) contours.delete();
+    if (hierarchy && !hierarchy.isDeleted()) hierarchy.delete();
+    if (softMask && !softMask.isDeleted()) softMask.delete();
+    if (tempRgba && !tempRgba.isDeleted()) tempRgba.delete();
   }
 };
 

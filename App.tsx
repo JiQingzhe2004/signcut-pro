@@ -35,6 +35,9 @@ const App: React.FC = () => {
 
   // Scroll Header State
   const [showHeader, setShowHeader] = useState(true);
+  
+  // Drag State
+  const [isDragging, setIsDragging] = useState(false);
 
   // Handle Scroll for Auto-hiding Header
   useEffect(() => {
@@ -58,8 +61,7 @@ const App: React.FC = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const processFile = async (file: File) => {
     if (!file) return;
     
     setCurrentFile(file);
@@ -83,6 +85,32 @@ const App: React.FC = () => {
       setStatus(ProcessingStatus.EDITING);
     };
     img.src = objectUrl;
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      processFile(file);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      processFile(file);
+    }
   };
 
   const handleProcessFromEditor = async (boxes: SelectionBox[], useAI: boolean = false) => {
@@ -410,7 +438,12 @@ const App: React.FC = () => {
                 {isCyber ? '> 生成二值化矢量级输出' : '一键生成透明底电子签名'}
               </p>
               
-              <label className={`group relative flex flex-col items-center justify-center w-full h-56 sm:h-72 border-2 border-dashed rounded-2xl sm:rounded-3xl cursor-pointer transition-all touch-manipulation ${isCyber ? 'border-cyan-500/30 bg-slate-900/50 active:bg-cyan-950/10 active:border-cyan-400 active:shadow-[0_0_30px_rgba(6,182,212,0.15)]' : 'border-slate-300 bg-white/40 active:bg-white/60 active:border-blue-400 active:shadow-xl active:scale-[1.02] backdrop-blur-sm'}`}>
+              <label 
+                className={`group relative flex flex-col items-center justify-center w-full h-56 sm:h-72 border-2 border-dashed rounded-2xl sm:rounded-3xl cursor-pointer transition-all touch-manipulation ${isCyber ? (isDragging ? 'border-cyan-400 bg-cyan-950/20 shadow-[0_0_30px_rgba(6,182,212,0.3)] scale-[1.02]' : 'border-cyan-500/30 bg-slate-900/50 active:bg-cyan-950/10 active:border-cyan-400 active:shadow-[0_0_30px_rgba(6,182,212,0.15)]') : (isDragging ? 'border-blue-500 bg-blue-50/80 shadow-xl scale-[1.02]' : 'border-slate-300 bg-white/40 active:bg-white/60 active:border-blue-400 active:shadow-xl active:scale-[1.02] backdrop-blur-sm')}`}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+              >
                 <div className="flex flex-col items-center justify-center pt-5 pb-6 px-4">
                   <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center mb-4 sm:mb-6 group-active:scale-110 transition-transform ${isCyber ? 'bg-slate-800 border border-slate-700 group-active:border-cyan-500/50' : 'bg-white shadow-lg text-blue-500'}`}>
                     <svg className={`w-8 h-8 sm:w-10 sm:h-10 ${isCyber ? 'text-cyan-500' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -418,7 +451,7 @@ const App: React.FC = () => {
                     </svg>
                   </div>
                   <p className={`mb-2 text-sm sm:text-base font-bold uppercase tracking-wider ${isCyber ? 'text-cyan-100' : 'text-slate-700'}`}>
-                    {isCyber ? '初始化数据上传' : '点击上传图片'}
+                    {isCyber ? '点击或拖拽上传数据' : '点击或拖拽上传图片'}
                   </p>
                   <p className={`text-xs sm:text-sm ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400'}`}>支持 JPG, PNG 格式输入</p>
                 </div>
