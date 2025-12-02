@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { SelectionBox, Theme } from '../types';
 import { Button } from './Button';
 import { Logo } from './Logo';
@@ -28,12 +28,26 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   theme
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
   
   // State
   const [boxes, setBoxes] = useState<SelectionBox[]>(initialBoxes);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<InteractionMode>('IDLE');
-  
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(zoom);
+  const pendingZoomAdjustment = useRef<{ point: { x: number, y: number }, deltaZoom: number } | null>(null);
+
+  useLayoutEffect(() => {
+    zoomRef.current = zoom;
+    if (pendingZoomAdjustment.current && viewportRef.current) {
+      const { point, deltaZoom } = pendingZoomAdjustment.current;
+      viewportRef.current.scrollLeft += point.x * deltaZoom;
+      viewportRef.current.scrollTop += point.y * deltaZoom;
+      pendingZoomAdjustment.current = null;
+    }
+  }, [zoom]);
+
   // Interaction State
   const [startPoint, setStartPoint] = useState<{ x: number, y: number } | null>(null);
   const [activeHandle, setActiveHandle] = useState<ResizeHandle | null>(null);
@@ -44,9 +58,30 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   const [initialBoxSnapshot, setInitialBoxSnapshot] = useState<SelectionBox | null>(null);
 
   const [isPreviewMode, setIsPreviewMode] = useState(false);
-  
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState<{x: number, y: number, scrollX: number, scrollY: number} | null>(null);
+
   const isCyber = theme === 'cyberpunk';
   const SNAP_THRESHOLD = 20;
+
+  // Initialize zoom to fit
+  useEffect(() => {
+    if (viewportRef.current && originalWidth && originalHeight) {
+      const viewportWidth = viewportRef.current.clientWidth - 48; // Minus padding
+      const viewportHeight = viewportRef.current.clientHeight - 96; // Minus padding (top 9rem ~ 144px for mobile, 7rem for desktop + bottom space)
+      // Actually, let's be more generous with space subtraction to ensure it fits
+      
+      const scaleX = viewportWidth / originalWidth;
+      const scaleY = viewportHeight / originalHeight;
+      
+      // Initial fit zoom (max 1, so we don't over-zoom small images)
+      // If the image is very large, we scale it down.
+      const fitZoom = Math.min(scaleX, scaleY, 1);
+      
+      // Ensure we set it, and maybe trigger a re-render if needed
+      setZoom(fitZoom);
+    }
+  }, [originalWidth, originalHeight]);
 
   // --- Helpers ---
 
@@ -69,12 +104,51 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
     const scaleX = originalWidth / rect.width;
     const scaleY = originalHeight / rect.height;
 
+    // Fix: When zoomed, we might have slight floating point errors, or padding issues.
+    // But logic `originalWidth / (originalWidth * zoom) = 1/zoom` should hold.
+    // We don't need to change this logic because `rect.width` is now `originalWidth * zoom`.
+    // So `scaleX` becomes `1 / zoom`. 
+    // `clientX` is the pixel distance from left edge of the zoomed element.
+    // `x = clientX * (1/zoom)` -> maps back to original coordinates. 
+    // Perfect.
+
     // Clamp coords to image bounds so we can't select outside
     const x = clamp(clientX * scaleX, 0, originalWidth);
     const y = clamp(clientY * scaleY, 0, originalHeight);
 
     return { x, y };
   };
+
+  // Handle Wheel Zoom (Map-like)
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const currentZoom = zoomRef.current;
+      const delta = -e.deltaY;
+      const step = 0.1;
+      const zoomFactor = delta > 0 ? (1 + step) : (1 - step);
+      const newZoom = Math.min(Math.max(currentZoom * zoomFactor, 0.1), 5);
+
+      if (Math.abs(newZoom - currentZoom) < 0.001) return;
+
+      const point = getRelativeCoords(e as any);
+
+      pendingZoomAdjustment.current = {
+        point,
+        deltaZoom: newZoom - currentZoom
+      };
+
+      setZoom(newZoom);
+    };
+
+    viewport.addEventListener('wheel', handleWheel, { passive: false });
+    return () => viewport.removeEventListener('wheel', handleWheel);
+  }, [originalWidth, originalHeight]);
 
   // Find the closest snap target within threshold
   const getSnappedValue = (currentVal: number, targets: number[]) => {
@@ -95,7 +169,31 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
 
   // 1. Mouse/Touch Down on Container (Start Drawing or Deselect)
   const handleContainerMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
-    if (isPreviewMode) return;
+    // Panning Logic: Active if in Preview Mode OR Right Click
+    const isRightClick = 'button' in e && e.button === 2;
+    
+    if (isPreviewMode || isRightClick) {
+      // Start Panning Logic
+      if (viewportRef.current) {
+        let clientX: number, clientY: number;
+        if ('touches' in e && e.touches.length > 0) {
+          clientX = e.touches[0].clientX;
+          clientY = e.touches[0].clientY;
+        } else {
+          clientX = (e as React.MouseEvent).clientX;
+          clientY = (e as React.MouseEvent).clientY;
+        }
+
+        setIsPanning(true);
+        setPanStart({
+          x: clientX,
+          y: clientY,
+          scrollX: viewportRef.current.scrollLeft,
+          scrollY: viewportRef.current.scrollTop
+        });
+      }
+      return;
+    }
     
     // Only start drawing if clicking directly on the image/overlay container, not on a box
     if ((e.target as HTMLElement).closest('.selection-box')) return;
@@ -164,6 +262,25 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   // 4. Global Mouse/Touch Move
   useEffect(() => {
     const handleWindowMouseMove = (e: MouseEvent | TouchEvent) => {
+      if (isPanning && panStart && viewportRef.current) {
+        e.preventDefault();
+        let clientX: number, clientY: number;
+        if ('touches' in e && e.touches.length > 0) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else {
+            clientX = (e as MouseEvent).clientX;
+            clientY = (e as MouseEvent).clientY;
+        }
+        
+        const dx = clientX - panStart.x;
+        const dy = clientY - panStart.y;
+        
+        viewportRef.current.scrollLeft = panStart.scrollX - dx;
+        viewportRef.current.scrollTop = panStart.scrollY - dy;
+        return;
+      }
+
       if (mode === 'IDLE' || !startPoint) return;
 
       const current = getRelativeCoords(e);
@@ -361,6 +478,12 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
     };
 
     const handleWindowMouseUp = () => {
+      if (isPanning) {
+        setIsPanning(false);
+        setPanStart(null);
+        return;
+      }
+
       if (mode === 'DRAWING' && tempBox) {
         if (tempBox.width > 10 && tempBox.height > 10) {
           const newBox = { ...tempBox, id: crypto.randomUUID() };
@@ -384,7 +507,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
       handleWindowMouseUp();
     };
 
-    if (mode !== 'IDLE') {
+    if (mode !== 'IDLE' || isPanning) {
       window.addEventListener('mousemove', handleWindowMouseMove);
       window.addEventListener('mouseup', handleWindowMouseUp);
       window.addEventListener('touchmove', handleWindowTouchMove, { passive: false });
@@ -397,7 +520,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
       window.removeEventListener('touchmove', handleWindowTouchMove);
       window.removeEventListener('touchend', handleWindowTouchEnd);
     };
-  }, [mode, startPoint, tempBox, initialBoxSnapshot, selectedId, activeHandle, originalWidth, originalHeight, boxes]);
+  }, [mode, startPoint, tempBox, initialBoxSnapshot, selectedId, activeHandle, originalWidth, originalHeight, boxes, isPanning, panStart, isPreviewMode]);
 
 
   const removeBox = (id: string) => {
@@ -417,7 +540,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   const titleClass = isCyber ? 'font-mono font-bold text-cyan-400 tracking-wider' : 'font-sans font-bold text-slate-800 tracking-tight';
 
   return (
-    <div className={`flex flex-col h-full animate-fade-in ${containerBgClass}`}>
+    <div className={`flex flex-col h-full fixed inset-0 ${containerBgClass}`}>
       
       {/* Floating Toolbar / Header */}
       <div className={`fixed top-4 sm:top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-6xl px-3 sm:px-4 lg:px-6`}>
@@ -446,18 +569,6 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
 
            {/* Right: Controls */}
            <div className="flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
-             <button 
-               onClick={() => setIsPreviewMode(!isPreviewMode)}
-               className={`p-2 rounded-lg transition-colors touch-manipulation active:scale-95 ${isPreviewMode ? (isCyber ? 'bg-cyan-500 text-black' : 'bg-blue-500 text-white') : (isCyber ? 'bg-slate-800 text-slate-400 active:text-cyan-400' : 'bg-slate-100 text-slate-500 active:bg-slate-200')}`}
-               title={isPreviewMode ? "切换回编辑模式" : "切换到预览模式"}
-             >
-               {isPreviewMode ? (
-                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-               ) : (
-                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-               )}
-             </button>
-             
              {!isPreviewMode && boxes.length > 0 && (
                <Button variant="danger" onClick={handleClear} className="text-xs px-2 sm:px-3 py-2 touch-manipulation" theme={theme}>
                  {isCyber ? '清除' : '清空'}
@@ -481,20 +592,72 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
         </div>
       </div>
 
+      {/* Floating Bottom Right Tools */}
+      <div className="fixed bottom-20 right-4 z-50 flex flex-col gap-3">
+        {/* Zoom Controls */}
+        <div className={`flex flex-col items-center rounded-full p-1 shadow-lg ${isCyber ? 'bg-slate-900/90 border border-slate-700' : 'bg-white/90 border border-slate-200'}`}>
+          <button 
+            onClick={() => setZoom(prev => Math.min(prev * 1.1, 5))}
+            className={`p-2 rounded-full transition-colors active:scale-95 ${isCyber ? 'text-cyan-400 hover:bg-cyan-900/30' : 'text-slate-600 hover:bg-slate-100'}`}
+            title="放大"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
+          </button>
+          
+          <div className={`w-full h-px my-1 ${isCyber ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
+          
+          <span className={`text-[10px] py-1 font-mono select-none ${isCyber ? 'text-slate-400' : 'text-slate-500'}`}>
+            {Math.round(zoom * 100)}%
+          </span>
+          
+          <div className={`w-full h-px my-1 ${isCyber ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
+
+          <button 
+            onClick={() => setZoom(prev => Math.max(prev * 0.9, 0.1))}
+            className={`p-2 rounded-full transition-colors active:scale-95 ${isCyber ? 'text-cyan-400 hover:bg-cyan-900/30' : 'text-slate-600 hover:bg-slate-100'}`}
+            title="缩小"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 12H4" /></svg>
+          </button>
+        </div>
+
+        {/* Mode Toggle */}
+        <button 
+          onClick={() => setIsPreviewMode(!isPreviewMode)}
+          className={`p-3 rounded-full shadow-lg transition-all active:scale-95 ${isPreviewMode ? (isCyber ? 'bg-cyan-500 text-black shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-blue-500 text-white shadow-blue-500/30') : (isCyber ? 'bg-slate-900/90 text-slate-400 border border-slate-700 hover:text-cyan-400' : 'bg-white/90 text-slate-500 border border-slate-200 hover:text-blue-600')}`}
+          title={isPreviewMode ? "切换回编辑模式" : "切换到预览模式"}
+        >
+          {isPreviewMode ? (
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+          ) : (
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+          )}
+        </button>
+      </div>
+
       {/* Canvas Area */}
-      <div className="flex-1 overflow-auto flex items-center justify-center p-2 sm:p-4 pt-36 sm:pt-28">
+      <div 
+        ref={viewportRef}
+        className="flex-1 overflow-auto scrollbar-hide flex p-2 sm:p-4 pt-36 sm:pt-28 pb-12"
+      >
         <div 
-          className="relative shadow-2xl select-none cursor-crosshair touch-none"
-          style={{ width: 'fit-content', height: 'fit-content' }}
+          className={`relative shadow-2xl select-none touch-none origin-top-left transition-all duration-200 ease-out m-auto ${(isPreviewMode || isPanning) ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-crosshair'}`}
+          style={{ 
+            width: originalWidth * zoom, 
+            height: originalHeight * zoom,
+            minWidth: originalWidth * zoom, // Ensure it doesn't shrink
+            minHeight: originalHeight * zoom
+          }}
           onMouseDown={handleContainerMouseDown}
           onTouchStart={handleContainerMouseDown}
+          onContextMenu={(e) => e.preventDefault()} // Disable context menu for right-click drag
         >
           {/* Main Image */}
           <img 
             ref={containerRef as any}
             src={imageUrl} 
             alt="Source" 
-            className={`max-h-[70vh] sm:max-h-[75vh] max-w-full object-contain pointer-events-none ${isCyber ? 'border border-slate-700' : 'rounded-lg shadow-lg'}`}
+            className={`w-full h-full object-contain pointer-events-none ${isCyber ? 'border border-slate-700' : 'rounded-lg shadow-lg'}`}
             draggable={false}
           />
           
@@ -535,8 +698,10 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
       </div>
       
       {/* Help Text */}
-      <div className={`pb-4 sm:pb-6 px-4 text-center text-[10px] sm:text-xs ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400'}`}>
-        {isPreviewMode ? '预览模式下无法编辑' : (isCyber ? '[操作指南] 拖拽绘制 / 点击选中 / 拖动边缘调整 / delete删除' : '提示：拖拽框选，点击选中可调整大小，Delete键删除')}
+      <div className={`absolute bottom-0 w-full pb-4 sm:pb-6 px-4 text-center text-[10px] sm:text-xs z-40 pointer-events-none select-none ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400'}`}>
+        <div className="bg-white/0 backdrop-blur-sm inline-block px-3 py-1 rounded-full">
+          {isPreviewMode ? '预览模式：按住鼠标拖动查看' : (isCyber ? '[操作指南] 左键绘制 / 右键拖动 / delete删除' : '提示：左键框选，右键拖动画面，Delete键删除')}
+        </div>
       </div>
     </div>
   );

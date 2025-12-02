@@ -42,3 +42,15 @@
 .animate-zoom-in {
   animation: zoomIn 0.3s ease-out;
 }
+
+/* Hide Scrollbar but keep functionality */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+
