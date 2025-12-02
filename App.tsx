@@ -52,6 +52,8 @@ const App: React.FC = () => {
   // Download Modal State
   const [showFolderModal, setShowFolderModal] = useState(false);
 
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+
   // Load AI Config on Mount
   useEffect(() => {
     setAiConfig(getAIConfig());
@@ -59,10 +61,13 @@ const App: React.FC = () => {
 
   // Handle Scroll for Auto-hiding Header
   useEffect(() => {
-    let lastScrollY = window.scrollY;
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) return;
+
+    let lastScrollY = scrollContainer.scrollTop;
     
     const handleScroll = () => {
-      const currentScrollY = window.scrollY;
+      const currentScrollY = scrollContainer.scrollTop;
       
       if (currentScrollY > lastScrollY && currentScrollY > 80) {
         // Scrolling Down & past threshold -> Hide
@@ -75,9 +80,9 @@ const App: React.FC = () => {
       lastScrollY = currentScrollY > 0 ? currentScrollY : 0;
     };
 
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    return () => scrollContainer.removeEventListener('scroll', handleScroll);
+  }, [status]);
 
   const processFile = async (file: File) => {
     if (!file) return;
@@ -375,7 +380,7 @@ const App: React.FC = () => {
     : 'bg-white/0 backdrop-blur-xl border border-white/40 shadow-xl rounded-[2rem] shadow-slate-200/50';
 
   // Use flexbox layout to ensure footer stays at bottom
-  const layoutClass = `min-h-screen font-sans flex flex-col relative transition-colors duration-500 ${mainBgClass}`;
+  const layoutClass = `h-screen font-sans flex flex-col relative transition-colors duration-500 overflow-hidden ${mainBgClass}`;
 
   return (
     <div className={layoutClass}>
@@ -394,7 +399,24 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Header */}
+      {/* Full Screen Editor Mode */}
+      {status === ProcessingStatus.EDITING && originalImage && (
+        <ImageEditor 
+          imageUrl={originalImage}
+          initialBoxes={detectedBoxes}
+          originalWidth={imgDims.w}
+          originalHeight={imgDims.h}
+          onConfirm={(boxes) => handleProcessFromEditor(boxes, 'local')}
+          onProcessWithAI={(boxes) => handleProcessFromEditor(boxes, 'ai')}
+          onCancel={handleReset}
+          theme={theme}
+        />
+      )}
+
+      {/* Scrollable Content Area */}
+      {status !== ProcessingStatus.EDITING && (
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto custom-scrollbar flex flex-col relative z-10 h-full w-full">
+          {/* Header */}
       {status !== ProcessingStatus.EDITING && (
         <header 
           className={`${headerClass} sticky top-0 z-50 transition-transform duration-500 ease-in-out ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}
@@ -445,19 +467,6 @@ const App: React.FC = () => {
         </header>
       )}
 
-      {/* Full Screen Editor Mode */}
-      {status === ProcessingStatus.EDITING && originalImage && (
-        <ImageEditor 
-          imageUrl={originalImage}
-          initialBoxes={detectedBoxes}
-          originalWidth={imgDims.w}
-          originalHeight={imgDims.h}
-          onConfirm={(boxes) => handleProcessFromEditor(boxes, 'local')}
-          onProcessWithAI={(boxes) => handleProcessFromEditor(boxes, 'ai')}
-          onCancel={handleReset}
-          theme={theme}
-        />
-      )}
 
       {/* Main Content */}
       {(status !== ProcessingStatus.EDITING) && (
@@ -666,10 +675,13 @@ const App: React.FC = () => {
         <footer className={`w-full py-4 sm:py-6 mt-auto z-10 relative ${isCyber ? 'border-t border-slate-800' : 'border-t border-slate-200/50'}`}>
           <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <p className={`text-center text-xs sm:text-sm ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
-              © {new Date().getFullYear()} - 吉庆喆版权所有
+              © {new Date().getFullYear()} - 吉庆喆
             </p>
           </div>
         </footer>
+      )}
+
+        </div>
       )}
 
       {/* AI Config Modal */}
