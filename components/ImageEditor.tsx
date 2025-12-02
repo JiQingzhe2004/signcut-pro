@@ -36,17 +36,14 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   const [mode, setMode] = useState<InteractionMode>('IDLE');
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(zoom);
-  const pendingZoomAdjustment = useRef<{ point: { x: number, y: number }, deltaZoom: number } | null>(null);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const panRef = useRef(pan);
 
-  useLayoutEffect(() => {
+  // Keep refs in sync
+  useEffect(() => {
+    panRef.current = pan;
     zoomRef.current = zoom;
-    if (pendingZoomAdjustment.current && viewportRef.current) {
-      const { point, deltaZoom } = pendingZoomAdjustment.current;
-      viewportRef.current.scrollLeft += point.x * deltaZoom;
-      viewportRef.current.scrollTop += point.y * deltaZoom;
-      pendingZoomAdjustment.current = null;
-    }
-  }, [zoom]);
+  }, [pan, zoom]);
 
   // Interaction State
   const [startPoint, setStartPoint] = useState<{ x: number, y: number } | null>(null);
@@ -59,7 +56,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
 
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState<{x: number, y: number, scrollX: number, scrollY: number} | null>(null);
+  const [panStart, setPanStart] = useState<{x: number, y: number, initialPanX: number, initialPanY: number} | null>(null);
 
   const isCyber = theme === 'cyberpunk';
   const SNAP_THRESHOLD = 20;
@@ -67,19 +64,22 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   // Initialize zoom to fit
   useEffect(() => {
     if (viewportRef.current && originalWidth && originalHeight) {
-      const viewportWidth = viewportRef.current.clientWidth - 48; // Minus padding
-      const viewportHeight = viewportRef.current.clientHeight - 96; // Minus padding (top 9rem ~ 144px for mobile, 7rem for desktop + bottom space)
-      // Actually, let's be more generous with space subtraction to ensure it fits
+      // Use the viewport dimensions directly (it fills the screen minus toolbars now)
+      const viewportWidth = viewportRef.current.clientWidth; 
+      const viewportHeight = viewportRef.current.clientHeight; 
       
-      const scaleX = viewportWidth / originalWidth;
-      const scaleY = viewportHeight / originalHeight;
+      const scaleX = (viewportWidth - 40) / originalWidth;
+      const scaleY = (viewportHeight - 160) / originalHeight; // Account for toolbar space
       
-      // Initial fit zoom (max 1, so we don't over-zoom small images)
-      // If the image is very large, we scale it down.
+      // Initial fit zoom
       const fitZoom = Math.min(scaleX, scaleY, 1);
       
-      // Ensure we set it, and maybe trigger a re-render if needed
+      // Center the image
+      const centerX = (viewportWidth - originalWidth * fitZoom) / 2;
+      const centerY = (viewportHeight - originalHeight * fitZoom) / 2;
+
       setZoom(fitZoom);
+      setPan({ x: centerX, y: centerY });
     }
   }, [originalWidth, originalHeight]);
 
@@ -89,34 +89,31 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
 
   // Convert Mouse/Touch Event to Image Coordinates
   const getRelativeCoords = (e: React.MouseEvent | MouseEvent | React.TouchEvent | TouchEvent) => {
-    if (!containerRef.current) return { x: 0, y: 0 };
-    const rect = containerRef.current.getBoundingClientRect();
+    if (!viewportRef.current) return { x: 0, y: 0 };
+    const rect = viewportRef.current.getBoundingClientRect();
     
     let clientX: number, clientY: number;
     if ('touches' in e && e.touches.length > 0) {
-      clientX = e.touches[0].clientX - rect.left;
-      clientY = e.touches[0].clientY - rect.top;
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
     } else {
-      clientX = e.clientX - rect.left;
-      clientY = e.clientY - rect.top;
+      clientX = (e as React.MouseEvent).clientX;
+      clientY = (e as React.MouseEvent).clientY;
     }
 
-    const scaleX = originalWidth / rect.width;
-    const scaleY = originalHeight / rect.height;
+    // Calculate coordinates relative to the viewport
+    const viewportX = clientX - rect.left;
+    const viewportY = clientY - rect.top;
 
-    // Fix: When zoomed, we might have slight floating point errors, or padding issues.
-    // But logic `originalWidth / (originalWidth * zoom) = 1/zoom` should hold.
-    // We don't need to change this logic because `rect.width` is now `originalWidth * zoom`.
-    // So `scaleX` becomes `1 / zoom`. 
-    // `clientX` is the pixel distance from left edge of the zoomed element.
-    // `x = clientX * (1/zoom)` -> maps back to original coordinates. 
-    // Perfect.
+    // Convert to image coordinates using current transform
+    // Formula: imageX = (viewportX - panX) / zoom
+    const x = (viewportX - panRef.current.x) / zoomRef.current;
+    const y = (viewportY - panRef.current.y) / zoomRef.current;
 
-    // Clamp coords to image bounds so we can't select outside
-    const x = clamp(clientX * scaleX, 0, originalWidth);
-    const y = clamp(clientY * scaleY, 0, originalHeight);
-
-    return { x, y };
+    return { 
+      x: clamp(x, 0, originalWidth), 
+      y: clamp(y, 0, originalHeight) 
+    };
   };
 
   // Handle Wheel Zoom (Map-like)
@@ -129,21 +126,38 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
       e.stopPropagation();
 
       const currentZoom = zoomRef.current;
-      const delta = -e.deltaY;
-      const step = 0.1;
-      const zoomFactor = delta > 0 ? (1 + step) : (1 - step);
-      const newZoom = Math.min(Math.max(currentZoom * zoomFactor, 0.1), 5);
+      const currentPan = panRef.current;
+      
+      const delta = Math.max(Math.min(e.deltaY, 50), -50);
+      
+      const ZOOM_SPEED = 0.0008; 
+      const zoomFactor = Math.exp(-delta * ZOOM_SPEED);
+      
+      const safeZoomFactor = Math.max(Math.min(zoomFactor, 1.05), 0.95);
+      
+      const newZoom = Math.min(Math.max(currentZoom * safeZoomFactor, 0.1), 20);
 
-      if (Math.abs(newZoom - currentZoom) < 0.001) return;
+      if (Math.abs(newZoom - currentZoom) < 0.0001) return;
 
-      const point = getRelativeCoords(e as any);
+      // Calculate cursor position relative to the viewport
+      const viewportRect = viewport.getBoundingClientRect();
+      const cursorX = e.clientX - viewportRect.left;
+      const cursorY = e.clientY - viewportRect.top;
 
-      pendingZoomAdjustment.current = {
-        point,
-        deltaZoom: newZoom - currentZoom
-      };
+      // Calculate the point on the image that is currently under the cursor
+      // cursorX = panX + imagePointX * currentZoom
+      // imagePointX = (cursorX - panX) / currentZoom
+      const imagePointX = (cursorX - currentPan.x) / currentZoom;
+      const imagePointY = (cursorY - currentPan.y) / currentZoom;
+
+      // Calculate new Pan to keep the image point under the cursor
+      // cursorX = newPanX + imagePointX * newZoom
+      // newPanX = cursorX - imagePointX * newZoom
+      const newPanX = cursorX - (imagePointX * newZoom);
+      const newPanY = cursorY - (imagePointY * newZoom);
 
       setZoom(newZoom);
+      setPan({ x: newPanX, y: newPanY });
     };
 
     viewport.addEventListener('wheel', handleWheel, { passive: false });
@@ -188,8 +202,8 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
         setPanStart({
           x: clientX,
           y: clientY,
-          scrollX: viewportRef.current.scrollLeft,
-          scrollY: viewportRef.current.scrollTop
+          initialPanX: pan.x,
+          initialPanY: pan.y
         });
       }
       return;
@@ -262,7 +276,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   // 4. Global Mouse/Touch Move
   useEffect(() => {
     const handleWindowMouseMove = (e: MouseEvent | TouchEvent) => {
-      if (isPanning && panStart && viewportRef.current) {
+      if (isPanning && panStart) {
         e.preventDefault();
         let clientX: number, clientY: number;
         if ('touches' in e && e.touches.length > 0) {
@@ -276,8 +290,10 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
         const dx = clientX - panStart.x;
         const dy = clientY - panStart.y;
         
-        viewportRef.current.scrollLeft = panStart.scrollX - dx;
-        viewportRef.current.scrollTop = panStart.scrollY - dy;
+        setPan({
+          x: panStart.initialPanX + dx,
+          y: panStart.initialPanY + dy
+        });
         return;
       }
 
@@ -535,8 +551,8 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
 
   const containerBgClass = isCyber ? 'bg-slate-950' : 'bg-[#F2F2F7]';
   const toolbarClass = isCyber
-    ? 'bg-slate-900/80 backdrop-blur border border-slate-800 shadow-2xl rounded-2xl'
-    : 'bg-white/70 backdrop-blur-xl border border-white/60 shadow-xl rounded-[2rem] shadow-slate-200/50';
+    ? 'bg-slate-900/0 backdrop-blur-md border border-slate-800/50 shadow-2xl rounded-2xl'
+    : 'bg-white/0 backdrop-blur-xl border border-white/40 shadow-xl rounded-[2rem] shadow-slate-200/50';
   const titleClass = isCyber ? 'font-mono font-bold text-cyan-400 tracking-wider' : 'font-sans font-bold text-slate-800 tracking-tight';
 
   return (
@@ -595,7 +611,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
       {/* Floating Bottom Right Tools */}
       <div className="fixed bottom-20 right-4 z-50 flex flex-col gap-3">
         {/* Zoom Controls */}
-        <div className={`flex flex-col items-center rounded-full p-1 shadow-lg ${isCyber ? 'bg-slate-900/90 border border-slate-700' : 'bg-white/90 border border-slate-200'}`}>
+        <div className={`flex flex-col items-center rounded-full p-1 shadow-lg ${isCyber ? 'bg-slate-900/0 border border-slate-700/50' : 'bg-white/0 border border-slate-200/50'} backdrop-blur-md`}>
           <button 
             onClick={() => setZoom(prev => Math.min(prev * 1.1, 5))}
             className={`p-2 rounded-full transition-colors active:scale-95 ${isCyber ? 'text-cyan-400 hover:bg-cyan-900/30' : 'text-slate-600 hover:bg-slate-100'}`}
@@ -624,7 +640,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
         {/* Mode Toggle */}
         <button 
           onClick={() => setIsPreviewMode(!isPreviewMode)}
-          className={`p-3 rounded-full shadow-lg transition-all active:scale-95 ${isPreviewMode ? (isCyber ? 'bg-cyan-500 text-black shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-blue-500 text-white shadow-blue-500/30') : (isCyber ? 'bg-slate-900/90 text-slate-400 border border-slate-700 hover:text-cyan-400' : 'bg-white/90 text-slate-500 border border-slate-200 hover:text-blue-600')}`}
+          className={`p-3 rounded-full shadow-lg transition-all active:scale-95 backdrop-blur-md ${isPreviewMode ? (isCyber ? 'bg-cyan-500/80 text-black shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-blue-500/80 text-white shadow-blue-500/30') : (isCyber ? 'bg-slate-900/0 text-slate-400 border border-slate-700/50 hover:text-cyan-400' : 'bg-white/0 text-slate-500 border border-slate-200/50 hover:text-blue-600')}`}
           title={isPreviewMode ? "切换回编辑模式" : "切换到预览模式"}
         >
           {isPreviewMode ? (
@@ -638,15 +654,14 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
       {/* Canvas Area */}
       <div 
         ref={viewportRef}
-        className="flex-1 overflow-auto scrollbar-hide flex p-2 sm:p-4 pt-36 sm:pt-28 pb-12"
+        className={`flex-1 overflow-hidden relative flex w-full h-full ${isCyber ? 'bg-slate-950' : 'bg-slate-50/50'}`}
       >
         <div 
-          className={`relative shadow-2xl select-none touch-none origin-top-left transition-all duration-200 ease-out m-auto ${(isPreviewMode || isPanning) ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-crosshair'}`}
+          className={`absolute top-0 left-0 shadow-2xl select-none touch-none origin-top-left transition-transform duration-75 ease-out ${(isPreviewMode || isPanning) ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-crosshair'}`}
           style={{ 
-            width: originalWidth * zoom, 
-            height: originalHeight * zoom,
-            minWidth: originalWidth * zoom, // Ensure it doesn't shrink
-            minHeight: originalHeight * zoom
+            width: originalWidth, 
+            height: originalHeight,
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           }}
           onMouseDown={handleContainerMouseDown}
           onTouchStart={handleContainerMouseDown}
@@ -679,13 +694,14 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
                originalWidth={originalWidth}
                originalHeight={originalHeight}
                theme={theme}
+               zoom={zoom}
              />
           ))}
 
           {/* Render Temp Box while drawing */}
           {tempBox && (
             <div 
-              className={`absolute border-2 pointer-events-none ${isCyber ? 'border-cyan-400 bg-cyan-400/10' : 'border-blue-500 bg-blue-500/10'}`}
+              className={`absolute border-2 pointer-events-none ${isCyber ? 'border-cyan-400 bg-cyan-500/20' : 'border-blue-500 bg-blue-500/10'}`}
               style={{
                 left: `${(tempBox.x / originalWidth) * 100}%`,
                 top: `${(tempBox.y / originalHeight) * 100}%`,
@@ -698,9 +714,9 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
       </div>
       
       {/* Help Text */}
-      <div className={`absolute bottom-0 w-full pb-4 sm:pb-6 px-4 text-center text-[10px] sm:text-xs z-40 pointer-events-none select-none ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400'}`}>
+      <div className={`absolute bottom-0 w-full pb-4 sm:pb-6 px-4 text-center text-[10px] sm:text-xs z-40 pointer-events-none select-none ${isCyber ? 'text-white font-mono' : 'text-black'}`}>
         <div className="bg-white/0 backdrop-blur-sm inline-block px-3 py-1 rounded-full">
-          {isPreviewMode ? '预览模式：按住鼠标拖动查看' : (isCyber ? '[操作指南] 左键绘制 / 右键拖动 / delete删除' : '提示：左键框选，右键拖动画面，Delete键删除')}
+          {isPreviewMode ? '预览模式：按住鼠标拖动查看，滑动滚轮缩放' : (isCyber ? '[操作指南] 左键绘制 / 右键拖动' : '提示：左键框选，右键拖动画面，滑动滚轮缩放')}
         </div>
       </div>
     </div>
@@ -719,10 +735,11 @@ interface BoxOverlayProps {
   originalWidth: number;
   originalHeight: number;
   theme: Theme;
+  zoom: number;
 }
 
 const BoxOverlay: React.FC<BoxOverlayProps> = ({ 
-  box, index, isSelected, showControls, onMouseDown, onRemove, onResizeStart, onRotateStart, originalWidth, originalHeight, theme 
+  box, index, isSelected, showControls, onMouseDown, onRemove, onResizeStart, onRotateStart, originalWidth, originalHeight, theme, zoom 
 }) => {
   const isCyber = theme === 'cyberpunk';
   
@@ -732,7 +749,7 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
     : (isCyber ? 'border-cyan-800/80 hover:border-cyan-500/80 z-10' : 'border-white/80 outline outline-1 outline-blue-500/50 z-10');
   
   const bgClass = isSelected
-    ? (isCyber ? 'bg-cyan-400/10' : 'bg-blue-500/10')
+    ? (isCyber ? 'bg-cyan-500/20' : 'bg-blue-500/10')
     : 'bg-transparent';
 
   const labelClass = isSelected
@@ -746,21 +763,31 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
   const currentRotation = box.rotation || 0;
   const isSnapped = Math.abs(currentRotation % 45) < 0.1;
 
+  // Scale correction for UI elements
+  const scaleStyle = { transform: `scale(${1 / zoom})` };
+  const handleSize = Math.max(10 / zoom, 4); // Minimum visible size
+
   return (
     <div
-      className={`absolute border-2 cursor-move transition-colors selection-box ${borderClass} ${bgClass}`}
+      className={`absolute cursor-move transition-colors selection-box ${borderClass} ${bgClass}`}
       style={{
         left: `${(box.x / originalWidth) * 100}%`,
         top: `${(box.y / originalHeight) * 100}%`,
         width: `${(box.width / originalWidth) * 100}%`,
         height: `${(box.height / originalHeight) * 100}%`,
         transform: `rotate(${box.rotation || 0}deg)`,
+        borderWidth: `${2 / zoom}px`,
       }}
       onMouseDown={onMouseDown}
     >
       {/* Label (Outside Top Left, right edge aligned to box left edge) */}
       <div 
-        className={`absolute -top-7 left-0 -translate-x-full px-2 py-0.5 text-[10px] font-bold tracking-wider rounded select-none whitespace-nowrap ${labelClass}`}
+        className={`absolute -top-7 left-0 -translate-x-full px-2 py-0.5 text-[10px] font-bold tracking-wider rounded select-none whitespace-nowrap origin-bottom-right ${labelClass}`}
+        style={{
+          transform: `scale(${1 / zoom}) translate(0, 0)`,
+          marginBottom: `${4 / zoom}px`,
+          marginRight: `${4 / zoom}px`
+        }}
       >
         {isCyber ? `TARGET_${String(index + 1).padStart(2, '0')}` : `签名 ${index + 1}`}
       </div>
@@ -768,12 +795,16 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
       {/* Rotation Handle */}
       {isSelected && showControls && (
         <div
-          className={`absolute -top-8 left-1/2 -translate-x-1/2 w-6 h-6 flex items-center justify-center rounded-full cursor-pointer touch-manipulation transition-colors ${
+          className={`absolute -top-8 left-1/2 -translate-x-1/2 w-6 h-6 flex items-center justify-center rounded-full cursor-pointer touch-manipulation transition-colors origin-bottom ${
             isSnapped 
               ? (isCyber ? 'bg-green-500 text-black border border-green-400 shadow-[0_0_10px_lime]' : 'bg-green-500 text-white border border-green-600 shadow-md')
               : (isCyber ? 'bg-cyan-900/80 text-cyan-400 border border-cyan-500' : 'bg-white text-blue-600 border border-blue-500 shadow-sm')
           }`}
-          style={{ cursor: 'grab' }}
+          style={{ 
+            cursor: 'grab',
+            transform: `translate(-50%, 0) scale(${1 / zoom})`,
+            marginBottom: `${12 / zoom}px`
+          }}
           onMouseDown={(e) => onRotateStart(e, box.id)}
           onTouchStart={(e) => {
             e.stopPropagation();
@@ -799,12 +830,17 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
       {/* Close Button */}
       {isSelected && showControls && (
         <div 
-          className={`absolute -top-7 right-0 w-6 h-6 sm:w-5 sm:h-5 flex items-center justify-center rounded cursor-pointer transition-colors touch-manipulation active:scale-95 ${isCyber ? 'bg-red-900/80 text-red-400 border border-red-800 active:bg-red-600 active:text-white' : 'bg-red-500 text-white shadow-sm active:bg-red-600'}`}
+          className={`absolute -top-7 right-0 w-6 h-6 sm:w-5 sm:h-5 flex items-center justify-center rounded cursor-pointer transition-colors touch-manipulation active:scale-95 origin-bottom-left ${isCyber ? 'bg-red-900/80 text-red-400 border border-red-800 active:bg-red-600 active:text-white' : 'bg-red-500 text-white shadow-sm active:bg-red-600'}`}
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
           onTouchEnd={(e) => {
             e.stopPropagation();
             e.preventDefault();
             onRemove();
+          }}
+          style={{
+            transform: `scale(${1 / zoom})`,
+            marginBottom: `${4 / zoom}px`,
+            marginLeft: `${4 / zoom}px`
           }}
         >
           <svg className="w-3.5 h-3.5 sm:w-3 sm:h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -817,10 +853,14 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
       {isSelected && showControls && handles.map(handle => (
         <div
           key={handle}
-          className={`absolute w-4 h-4 sm:w-2.5 sm:h-2.5 z-30 transform -translate-x-1/2 -translate-y-1/2 touch-manipulation ${isCyber ? 'bg-cyan-400 border border-cyan-950 shadow-[0_0_5px_cyan]' : 'bg-white border border-blue-500 rounded-full shadow-sm'}`}
+          className={`absolute z-30 touch-manipulation ${isCyber ? 'bg-cyan-400 border border-cyan-950 shadow-[0_0_5px_cyan]' : 'bg-white border border-blue-500 rounded-full shadow-sm'}`}
           style={{
             top: handle.includes('n') ? '0%' : handle.includes('s') ? '100%' : '50%',
             left: handle.includes('w') ? '0%' : handle.includes('e') ? '100%' : '50%',
+            width: `${10 / zoom}px`,
+            height: `${10 / zoom}px`,
+            transform: 'translate(-50%, -50%)', // No scale needed here as we set width/height directly
+            borderWidth: `${1 / zoom}px`,
             cursor: `${handle}-resize`
           }}
           onMouseDown={(e) => onResizeStart(e, box.id, handle)}

@@ -371,8 +371,8 @@ const App: React.FC = () => {
     : 'border-b border-white/50 bg-white/70 backdrop-blur-xl shadow-sm';
 
   const toolbarClass = isCyber
-    ? 'bg-slate-900/80 backdrop-blur border border-slate-800 shadow-2xl rounded-2xl'
-    : 'bg-white/70 backdrop-blur-xl border border-white/60 shadow-xl rounded-[2rem] shadow-slate-200/50';
+    ? 'bg-slate-900/0 backdrop-blur-md border border-slate-800/50 shadow-2xl rounded-2xl'
+    : 'bg-white/0 backdrop-blur-xl border border-white/40 shadow-xl rounded-[2rem] shadow-slate-200/50';
 
   // Use flexbox layout to ensure footer stays at bottom
   const layoutClass = `min-h-screen font-sans flex flex-col relative transition-colors duration-500 ${mainBgClass}`;

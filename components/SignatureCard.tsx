@@ -33,12 +33,12 @@ export const SignatureCard: React.FC<SignatureCardProps> = ({
 
   // Theme Styles
   const containerClasses = isCyber
-    ? "bg-gradient-to-br from-slate-900/60 via-slate-900/40 to-slate-900/60 backdrop-blur-2xl rounded-3xl border border-white/10 hover:border-cyan-500/30 transition-all duration-500 group relative overflow-hidden shadow-[0_8px_32px_0_rgba(0,0,0,0.36)]"
-    : "bg-white/60 backdrop-blur-xl rounded-[2rem] border border-white/50 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group shadow-lg shadow-slate-200/50 overflow-hidden";
+    ? "bg-slate-900/0 backdrop-blur-md rounded-3xl border border-slate-800/50 hover:border-cyan-500/30 transition-all duration-500 group relative overflow-hidden shadow-[0_8px_32px_0_rgba(0,0,0,0.36)]"
+    : "bg-white/0 backdrop-blur-xl rounded-[2rem] border border-white/40 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group shadow-lg shadow-slate-200/50 overflow-hidden";
 
   const headerClasses = isCyber
-    ? "px-5 py-4 bg-white/5 border-b border-white/5 flex justify-between items-center rounded-t-[inherit] backdrop-blur-sm"
-    : "px-6 py-4 border-b border-slate-100/50 flex justify-between items-center bg-white/40 rounded-t-[inherit]";
+    ? "px-5 py-4 bg-white/0 border-b border-white/5 flex justify-between items-center rounded-t-[inherit] backdrop-blur-sm"
+    : "px-6 py-4 border-b border-slate-100/50 flex justify-between items-center bg-white/0 rounded-t-[inherit]";
 
   const indexClasses = isCyber
     ? "text-sm font-mono text-cyan-400 font-bold tracking-wider drop-shadow-[0_0_5px_rgba(34,211,238,0.5)]"
@@ -49,8 +49,8 @@ export const SignatureCard: React.FC<SignatureCardProps> = ({
     : "text-[10px] text-slate-500 font-sans bg-slate-100 px-2 py-1 rounded-full";
 
   const imageContainerClasses = isCyber
-    ? "relative p-8 flex-1 flex items-center justify-center bg-black/20 cursor-pointer overflow-hidden"
-    : "relative p-8 flex-1 flex items-center justify-center bg-slate-50/50 cursor-pointer overflow-hidden";
+    ? "relative p-8 flex-1 flex items-center justify-center bg-transparent cursor-pointer overflow-hidden"
+    : "relative p-8 flex-1 flex items-center justify-center bg-transparent cursor-pointer overflow-hidden";
 
   const inputClasses = isCyber
     ? "flex-1 text-sm px-4 py-3 bg-black/20 border border-white/10 text-cyan-50 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all placeholder:text-slate-500 font-mono rounded-xl backdrop-blur-md"
