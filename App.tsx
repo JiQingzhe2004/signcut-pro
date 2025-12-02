@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import { processSignatureRegions, recommendSensitivity } from './services/imageProcessing';
 import { analyzeImageWithAI, getAIConfig, saveAIConfig, AIConfig } from './services/aiService';
 import { ProcessedSignature, ProcessingStatus, SelectionBox, Theme, ProcessingMode } from './types';
@@ -8,6 +10,7 @@ import { ImageEditor } from './components/ImageEditor';
 import { Logo } from './components/Logo';
 import { SignatureLightbox } from './components/SignatureLightbox';
 import { AiHelpModal } from './components/AiHelpModal';
+import { FolderNameModal } from './components/FolderNameModal';
 
 
 const App: React.FC = () => {
@@ -45,6 +48,9 @@ const App: React.FC = () => {
   const [aiConfig, setAiConfig] = useState<AIConfig>({ endpoint: '', apiKey: '', model: '' });
   const [showAiConfig, setShowAiConfig] = useState(false);
   const [showAiHelp, setShowAiHelp] = useState(false);
+
+  // Download Modal State
+  const [showFolderModal, setShowFolderModal] = useState(false);
 
   // Load AI Config on Mount
   useEffect(() => {
@@ -308,17 +314,34 @@ const App: React.FC = () => {
 
   const handleDownloadAll = () => {
     if (signatures.length === 0) return;
-    signatures.forEach((sig, idx) => {
-      setTimeout(() => {
-        const link = document.createElement('a');
-        link.href = sig.processedDataUrl;
-        const name = sig.annotation ? sig.annotation : `签名_${idx + 1}`;
-        link.download = `电子签名_${name}_${sig.width}x${sig.height}.png`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }, idx * 250); 
-    });
+    setShowFolderModal(true);
+  };
+
+  const handleConfirmDownload = async (folderName: string) => {
+    setShowFolderModal(false);
+    
+    try {
+      const zip = new JSZip();
+      const folder = zip.folder(folderName);
+      
+      if (folder) {
+        signatures.forEach((sig, idx) => {
+          const name = sig.annotation ? sig.annotation : `签名_${idx + 1}`;
+          // Exclude pixel ratio from filename
+          const filename = `电子签名_${name}.png`;
+          
+          // processedDataUrl is data:image/png;base64,...
+          const base64Data = sig.processedDataUrl.split(',')[1];
+          folder.file(filename, base64Data, { base64: true });
+        });
+      }
+
+      const content = await zip.generateAsync({ type: 'blob' });
+      saveAs(content, `${folderName}.zip`);
+    } catch (error) {
+      console.error("Failed to zip files:", error);
+      alert("打包失败，请重试");
+    }
   };
 
   const handleReset = () => {
@@ -720,6 +743,14 @@ const App: React.FC = () => {
       {showAiHelp && (
         <AiHelpModal onClose={() => setShowAiHelp(false)} theme={theme} />
       )}
+
+      {/* Folder Name Modal */}
+      <FolderNameModal 
+        isOpen={showFolderModal}
+        onClose={() => setShowFolderModal(false)}
+        onConfirm={handleConfirmDownload}
+        theme={theme}
+      />
     </div>
   );
 };
