@@ -2,6 +2,22 @@ import React, { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { SelectionBox, Theme } from '../types';
 import { Button } from './Button';
 import { Logo } from './Logo';
+import { Tooltip } from './Tooltip';
+import { 
+  SplinePointer, 
+  Tangent, 
+  ZoomIn, 
+  ZoomOut, 
+  Eye, 
+  EyeOff,
+  RotateCw,
+  Trash2,
+  X,
+  Wand2,
+  Check,
+  Loader2,
+  Move
+} from 'lucide-react';
 
 interface ImageEditorProps {
   imageUrl: string;
@@ -36,6 +52,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   const [boxes, setBoxes] = useState<SelectionBox[]>(initialBoxes);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<InteractionMode>('IDLE');
+  const [drawMode, setDrawMode] = useState<'include' | 'exclude'>('include');
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(zoom);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -511,7 +528,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
 
       if (mode === 'DRAWING' && tempBox) {
         if (tempBox.width > 10 && tempBox.height > 10) {
-          const newBox = { ...tempBox, id: crypto.randomUUID() };
+          const newBox = { ...tempBox, id: crypto.randomUUID(), type: drawMode };
           setBoxes(prev => [...prev, newBox]);
           setSelectedId(newBox.id);
         }
@@ -619,15 +636,39 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
 
       {/* Floating Bottom Right Tools */}
       <div className="fixed bottom-20 right-4 z-50 flex flex-col gap-3">
+        {/* Draw Mode Controls */}
+        <div className={`flex flex-col items-center rounded-full p-1 shadow-lg ${isCyber ? 'bg-slate-900/0 border border-slate-700/50' : 'bg-white/0 border border-slate-200/50'} backdrop-blur-md`}>
+          <Tooltip content={isCyber ? "包含区域" : "选中区域"} theme={theme}>
+            <button
+              onClick={() => setDrawMode('include')}
+              className={`p-2 rounded-full transition-colors ${drawMode === 'include' ? (isCyber ? 'bg-cyan-500/20 text-cyan-400' : 'bg-blue-100 text-blue-600') : (isCyber ? 'text-slate-500 hover:text-cyan-400' : 'text-slate-400 hover:text-blue-600')}`}
+            >
+              <SplinePointer className="w-5 h-5" />
+            </button>
+          </Tooltip>
+          
+          <div className={`w-full h-px my-1 ${isCyber ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
+
+          <Tooltip content={isCyber ? "排除区域" : "排除区域"} theme={theme}>
+            <button
+              onClick={() => setDrawMode('exclude')}
+              className={`p-2 rounded-full transition-colors ${drawMode === 'exclude' ? (isCyber ? 'bg-red-500/20 text-red-400' : 'bg-red-100 text-red-600') : (isCyber ? 'text-slate-500 hover:text-red-400' : 'text-slate-400 hover:text-red-600')}`}
+            >
+               <Tangent className="w-5 h-5" />
+            </button>
+          </Tooltip>
+        </div>
+
         {/* Zoom Controls */}
         <div className={`flex flex-col items-center rounded-full p-1 shadow-lg ${isCyber ? 'bg-slate-900/0 border border-slate-700/50' : 'bg-white/0 border border-slate-200/50'} backdrop-blur-md`}>
-          <button 
-            onClick={() => setZoom(prev => Math.min(prev * 1.1, 5))}
-            className={`p-2 rounded-full transition-colors active:scale-95 ${isCyber ? 'text-cyan-400 hover:bg-cyan-900/30' : 'text-slate-600 hover:bg-slate-100'}`}
-            title="放大"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
-          </button>
+          <Tooltip content="放大" theme={theme}>
+            <button 
+              onClick={() => setZoom(prev => Math.min(prev * 1.1, 5))}
+              className={`p-2 rounded-full transition-colors active:scale-95 ${isCyber ? 'text-cyan-400 hover:bg-cyan-900/30' : 'text-slate-600 hover:bg-slate-100'}`}
+            >
+              <ZoomIn className="w-5 h-5" />
+            </button>
+          </Tooltip>
           
           <div className={`w-full h-px my-1 ${isCyber ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
           
@@ -637,27 +678,29 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
           
           <div className={`w-full h-px my-1 ${isCyber ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
 
-          <button 
-            onClick={() => setZoom(prev => Math.max(prev * 0.9, 0.1))}
-            className={`p-2 rounded-full transition-colors active:scale-95 ${isCyber ? 'text-cyan-400 hover:bg-cyan-900/30' : 'text-slate-600 hover:bg-slate-100'}`}
-            title="缩小"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 12H4" /></svg>
-          </button>
+          <Tooltip content="缩小" theme={theme}>
+            <button 
+              onClick={() => setZoom(prev => Math.max(prev * 0.9, 0.1))}
+              className={`p-2 rounded-full transition-colors active:scale-95 ${isCyber ? 'text-cyan-400 hover:bg-cyan-900/30' : 'text-slate-600 hover:bg-slate-100'}`}
+            >
+              <ZoomOut className="w-5 h-5" />
+            </button>
+          </Tooltip>
         </div>
 
         {/* Mode Toggle */}
-        <button 
-          onClick={() => setIsPreviewMode(!isPreviewMode)}
-          className={`p-3 rounded-full shadow-lg transition-all active:scale-95 backdrop-blur-md ${isPreviewMode ? (isCyber ? 'bg-cyan-500/80 text-black shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-blue-500/80 text-white shadow-blue-500/30') : (isCyber ? 'bg-slate-900/0 text-slate-400 border border-slate-700/50 hover:text-cyan-400' : 'bg-white/0 text-slate-500 border border-slate-200/50 hover:text-blue-600')}`}
-          title={isPreviewMode ? "切换回编辑模式" : "切换到预览模式"}
-        >
-          {isPreviewMode ? (
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-          ) : (
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-          )}
-        </button>
+        <Tooltip content={isPreviewMode ? "切换回编辑模式" : "切换到预览模式"} theme={theme}>
+          <button 
+            onClick={() => setIsPreviewMode(!isPreviewMode)}
+            className={`p-3 rounded-full shadow-lg transition-all active:scale-95 backdrop-blur-md ${isPreviewMode ? (isCyber ? 'bg-cyan-500/80 text-black shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-blue-500/80 text-white shadow-blue-500/30') : (isCyber ? 'bg-slate-900/0 text-slate-400 border border-slate-700/50 hover:text-cyan-400' : 'bg-white/0 text-slate-500 border border-slate-200/50 hover:text-blue-600')}`}
+          >
+            {isPreviewMode ? (
+              <Eye className="w-6 h-6" />
+            ) : (
+              <EyeOff className="w-6 h-6" />
+            )}
+          </button>
+        </Tooltip>
       </div>
 
       {/* Canvas Area */}
@@ -710,7 +753,11 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
           {/* Render Temp Box while drawing */}
           {tempBox && (
             <div 
-              className={`absolute border-2 pointer-events-none ${isCyber ? 'border-cyan-400 bg-cyan-500/20' : 'border-blue-500 bg-blue-500/10'}`}
+              className={`absolute border-2 pointer-events-none ${
+                drawMode === 'exclude'
+                  ? (isCyber ? 'border-red-500 bg-red-500/20' : 'border-red-500 bg-red-500/10')
+                  : (isCyber ? 'border-cyan-400 bg-cyan-500/20' : 'border-blue-500 bg-blue-500/10')
+              }`}
               style={{
                 left: `${(tempBox.x / originalWidth) * 100}%`,
                 top: `${(tempBox.y / originalHeight) * 100}%`,
@@ -751,19 +798,30 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
   box, index, isSelected, showControls, onMouseDown, onRemove, onResizeStart, onRotateStart, originalWidth, originalHeight, theme, zoom 
 }) => {
   const isCyber = theme === 'cyberpunk';
+  const isExclude = box.type === 'exclude';
   
   // Cyber Style
   const borderClass = isSelected 
-    ? (isCyber ? 'border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.5)] z-20' : 'border-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.3)] z-20')
-    : (isCyber ? 'border-cyan-800/80 hover:border-cyan-500/80 z-10' : 'border-white/80 outline outline-1 outline-blue-500/50 z-10');
+    ? (isExclude 
+        ? (isCyber ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)] z-20' : 'border-red-500 shadow-[0_0_0_2px_rgba(239,68,68,0.3)] z-20')
+        : (isCyber ? 'border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.5)] z-20' : 'border-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.3)] z-20'))
+    : (isExclude
+        ? (isCyber ? 'border-red-900/80 hover:border-red-500/80 z-10' : 'border-red-500/50 outline outline-1 outline-red-500/30 z-10')
+        : (isCyber ? 'border-cyan-800/80 hover:border-cyan-500/80 z-10' : 'border-white/80 outline outline-1 outline-blue-500/50 z-10'));
   
   const bgClass = isSelected
-    ? (isCyber ? 'bg-cyan-500/20' : 'bg-blue-500/10')
-    : 'bg-transparent';
+    ? (isExclude 
+        ? (isCyber ? 'bg-red-500/20' : 'bg-red-500/10')
+        : (isCyber ? 'bg-cyan-500/20' : 'bg-blue-500/10'))
+    : (isExclude ? (isCyber ? 'bg-red-900/10' : 'bg-red-500/5') : 'bg-transparent');
 
   const labelClass = isSelected
-    ? (isCyber ? 'bg-cyan-500 text-black' : 'bg-blue-500 text-white')
-    : (isCyber ? 'bg-slate-800 border border-slate-700 text-cyan-500' : 'bg-white text-blue-600 shadow-sm');
+    ? (isExclude
+        ? (isCyber ? 'bg-red-500 text-black' : 'bg-red-500 text-white')
+        : (isCyber ? 'bg-cyan-500 text-black' : 'bg-blue-500 text-white'))
+    : (isExclude
+        ? (isCyber ? 'bg-slate-800 border border-red-900 text-red-500' : 'bg-white text-red-600 shadow-sm')
+        : (isCyber ? 'bg-slate-800 border border-slate-700 text-cyan-500' : 'bg-white text-blue-600 shadow-sm'));
 
   // Resize Handles
   const handles: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -798,7 +856,7 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
           marginRight: `${4 / zoom}px`
         }}
       >
-        {isCyber ? `TARGET_${String(index + 1).padStart(2, '0')}` : `签名 ${index + 1}`}
+        {isCyber ? (isExclude ? `EXCLUDE_${String(index + 1).padStart(2, '0')}` : `TARGET_${String(index + 1).padStart(2, '0')}`) : (isExclude ? `排除 ${index + 1}` : `签名 ${index + 1}`)}
       </div>
 
       {/* Rotation Handle */}
@@ -862,7 +920,11 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
       {isSelected && showControls && handles.map(handle => (
         <div
           key={handle}
-          className={`absolute z-30 touch-manipulation ${isCyber ? 'bg-cyan-400 border border-cyan-950 shadow-[0_0_5px_cyan]' : 'bg-white border border-blue-500 rounded-full shadow-sm'}`}
+          className={`absolute z-30 touch-manipulation ${
+            isExclude 
+             ? (isCyber ? 'bg-red-400 border border-red-950 shadow-[0_0_5px_red]' : 'bg-white border border-red-500 rounded-full shadow-sm')
+             : (isCyber ? 'bg-cyan-400 border border-cyan-950 shadow-[0_0_5px_cyan]' : 'bg-white border border-blue-500 rounded-full shadow-sm')
+          }`}
           style={{
             top: handle.includes('n') ? '0%' : handle.includes('s') ? '100%' : '50%',
             left: handle.includes('w') ? '0%' : handle.includes('e') ? '100%' : '50%',

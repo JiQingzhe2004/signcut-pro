@@ -32,6 +32,7 @@ export interface SelectionBox {
   width: number;
   height: number;
   rotation?: number; // in degrees
+  type?: 'include' | 'exclude';
 }
 
 export type Theme = 'cyberpunk' | 'ios';

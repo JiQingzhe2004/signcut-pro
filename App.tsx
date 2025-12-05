@@ -255,7 +255,8 @@ const App: React.FC = () => {
         if (activeImage.previewUrl) img.src = activeImage.previewUrl;
         await new Promise(r => { if (img.complete) r(true); else { img.onload = () => r(true); img.onerror = () => r(true); }});
 
-        const box = boxesToProcess[0]; // Analyze the first box
+        // Find the first target box (not exclude) for analysis
+        const box = boxesToProcess.find(b => b.type !== 'exclude') || boxesToProcess[0];
         
         const canvas = document.createElement('canvas');
         canvas.width = box.width;

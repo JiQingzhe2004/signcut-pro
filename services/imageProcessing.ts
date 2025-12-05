@@ -376,11 +376,29 @@ export const processSignatureRegions = async (
   if (!ctx) throw new Error('Could not get canvas context');
   ctx.drawImage(imageBitmap, 0, 0);
 
+  // 0. Apply Masks (Exclude Regions)
+  // Draw white boxes over excluded areas so they don't get processed
+  regions.forEach(box => {
+    if (box.type === 'exclude') {
+      ctx.save();
+      const cx = box.x + box.width / 2;
+      const cy = box.y + box.height / 2;
+      ctx.translate(cx, cy);
+      if (box.rotation) {
+        ctx.rotate(box.rotation * Math.PI / 180);
+      }
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(-box.width / 2, -box.height / 2, box.width, box.height);
+      ctx.restore();
+    }
+  });
+
   const results: ProcessedSignature[] = [];
   const total = regions.length;
 
   for (let i = 0; i < regions.length; i++) {
     const box = regions[i];
+    if (box.type === 'exclude') continue; // Skip exclude boxes (they are just masks)
     if (box.width <= 0 || box.height <= 0) continue;
 
     // 1. Extract Crop
