@@ -3,7 +3,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { processSignatureRegions, recommendSensitivity } from './services/imageProcessing';
 import { analyzeImageWithAI, getAIConfig, saveAIConfig, AIConfig } from './services/aiService';
-import { ProcessedSignature, ProcessingStatus, SelectionBox, Theme, ProcessingMode } from './types';
+import { ProcessedSignature, ProcessingStatus, SelectionBox, Theme, ProcessingMode, UploadedImage } from './types';
 import { Button } from './components/Button';
 import { SignatureCard } from './components/SignatureCard';
 import { ImageEditor } from './components/ImageEditor';
@@ -19,16 +19,17 @@ const App: React.FC = () => {
   
   const [processingMode, setProcessingMode] = useState<ProcessingMode>('local');
   const [signatures, setSignatures] = useState<ProcessedSignature[]>([]);
-  const [sensitivity, setSensitivity] = useState<number>(20);
+  const [defaultSensitivity, setDefaultSensitivity] = useState<number>(20);
   // Default dimensions 452x224
   const [outputSize, setOutputSize] = useState<{width: number, height: number}>({ width: 452, height: 224 });
   
-  const [originalImage, setOriginalImage] = useState<string | null>(null);
-  const [currentFile, setCurrentFile] = useState<File | null>(null);
+  // Multi-Image State
+  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
+  const [activeImageId, setActiveImageId] = useState<string | null>(null);
   
-  // Editor State
-  const [detectedBoxes, setDetectedBoxes] = useState<SelectionBox[]>([]);
-  const [imgDims, setImgDims] = useState<{w: number, h: number}>({ w: 0, h: 0 });
+  // Computed active image
+  const activeImage = uploadedImages.find(img => img.id === activeImageId) || null;
+  const sensitivity = activeImage?.sensitivity || defaultSensitivity;
 
   // Theme State
   const [theme, setTheme] = useState<Theme>('ios');
@@ -67,7 +68,7 @@ const App: React.FC = () => {
       if (!response.ok) throw new Error('Network response was not ok');
       const blob = await response.blob();
       const file = new File([blob], "url_image.png", { type: blob.type });
-      await processFile(file);
+      await addFiles([file]);
       setShowUrlInput(false);
       setUrlInput('');
     } catch (error) {
@@ -94,10 +95,8 @@ const App: React.FC = () => {
       const currentScrollY = scrollContainer.scrollTop;
       
       if (currentScrollY > lastScrollY && currentScrollY > 80) {
-        // Scrolling Down & past threshold -> Hide
         setShowHeader(false);
       } else {
-        // Scrolling Up -> Show
         setShowHeader(true);
       }
       
@@ -111,19 +110,23 @@ const App: React.FC = () => {
   // Handle Paste Event
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
-      if (status !== ProcessingStatus.IDLE) return;
+      // Allow paste in IDLE or EDITING
+      if (status !== ProcessingStatus.IDLE && status !== ProcessingStatus.EDITING) return;
       
       const items = e.clipboardData?.items;
       if (!items) return;
 
+      const files: File[] = [];
       for (let i = 0; i < items.length; i++) {
         if (items[i].type.indexOf('image') !== -1) {
           const file = items[i].getAsFile();
           if (file) {
-            processFile(file);
-            break;
+            files.push(file);
           }
         }
+      }
+      if (files.length > 0) {
+        addFiles(files);
       }
     };
 
@@ -131,36 +134,59 @@ const App: React.FC = () => {
     return () => window.removeEventListener('paste', handlePaste);
   }, [status]);
 
-  const processFile = async (file: File) => {
-    if (!file) return;
+  const addFiles = async (files: File[]) => {
+    if (files.length === 0) return;
     
-    setCurrentFile(file);
-    const objectUrl = URL.createObjectURL(file);
-    setOriginalImage(objectUrl);
+    const newImages: UploadedImage[] = [];
     
-    // Load image to get dimensions, then go straight to editor (Empty state)
-    const img = new Image();
-    img.onload = async () => {
-      setImgDims({ w: img.width, h: img.height });
-      setDetectedBoxes([]); // No initial boxes
+    // Process sequentially to ensure order (though parallel is faster, order matters for UI)
+    for (const file of files) {
+      const objectUrl = URL.createObjectURL(file);
       
-      // Auto-recommend sensitivity threshold
-      try {
-        const recommended = await recommendSensitivity(file);
-        setSensitivity(recommended);
-      } catch (e) {
-        // Keep default sensitivity
+      await new Promise<void>((resolve) => {
+        const img = new Image();
+        img.onload = async () => {
+          let recommended = 20;
+          try {
+            recommended = await recommendSensitivity(file);
+          } catch (e) {
+            // Keep default
+          }
+
+          newImages.push({
+            id: Date.now().toString() + Math.random().toString(36).slice(2),
+            file,
+            previewUrl: objectUrl,
+            width: img.width,
+            height: img.height,
+            boxes: [], // No initial boxes
+            sensitivity: recommended,
+            name: file.name
+          });
+          resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = objectUrl;
+      });
+    }
+
+    if (newImages.length > 0) {
+      setUploadedImages(prev => [...prev, ...newImages]);
+      
+      // If first time adding, or specifically if we are in IDLE, switch to EDITING
+      if (status === ProcessingStatus.IDLE) {
+        setStatus(ProcessingStatus.EDITING);
+        setActiveImageId(newImages[0].id);
+      } else if (status === ProcessingStatus.EDITING && !activeImageId) {
+        setActiveImageId(newImages[0].id);
       }
-      
-      setStatus(ProcessingStatus.EDITING);
-    };
-    img.src = objectUrl;
+    }
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      processFile(file);
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      addFiles(Array.from(files));
     }
   };
 
@@ -177,27 +203,36 @@ const App: React.FC = () => {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file && file.type.startsWith('image/')) {
-      processFile(file);
+    const droppedFiles = e.dataTransfer.files;
+    if (droppedFiles && droppedFiles.length > 0) {
+      const imageFiles = (Array.from(droppedFiles) as File[]).filter(f => f.type.startsWith('image/'));
+      if (imageFiles.length > 0) {
+        addFiles(imageFiles);
+      }
     }
   };
 
+  const updateImageBoxes = (id: string, boxes: SelectionBox[]) => {
+    setUploadedImages(prev => prev.map(img => 
+      img.id === id ? { ...img, boxes } : img
+    ));
+  };
+
   const handleProcessFromEditor = async (boxes: SelectionBox[], mode: 'local' | 'ai' = 'local') => {
-    if (!currentFile) return;
+    if (!activeImage) return;
     
     // 1. Save History immediately
-    setDetectedBoxes(boxes);
+    updateImageBoxes(activeImage.id, boxes);
 
     let boxesToProcess = boxes;
     // Fallback: If no boxes drawn, use the entire image
     if (boxesToProcess.length === 0) {
       boxesToProcess = [{
-        id: 'full-image',
+        id: `full-image-${activeImage.id}`,
         x: 0,
         y: 0,
-        width: imgDims.w,
-        height: imgDims.h
+        width: activeImage.width,
+        height: activeImage.height
       }];
     }
 
@@ -212,19 +247,15 @@ const App: React.FC = () => {
 
       try {
         setStatus(ProcessingStatus.PROCESSING);
-        setSignatures([]);
         
-        // Get the cropped image for the first box (assuming single selection for now, or loop)
-        // Currently AI analysis is done on the whole file or we can crop.
-        // To match the flow, let's crop the first box to send to AI for analysis
-        // Or send the whole file and ask it to focus on the box?
-        // Simpler: Send the cropped canvas.
-
+        // Remove existing signatures for this image
+        setSignatures(prev => prev.filter(s => s.sourceImageId !== activeImage.id));
+        
         const img = new Image();
-        if (originalImage) img.src = originalImage;
+        if (activeImage.previewUrl) img.src = activeImage.previewUrl;
         await new Promise(r => { if (img.complete) r(true); else { img.onload = () => r(true); img.onerror = () => r(true); }});
 
-        const box = boxesToProcess[0]; // Analyze the first box to get parameters
+        const box = boxesToProcess[0]; // Analyze the first box
         
         const canvas = document.createElement('canvas');
         canvas.width = box.width;
@@ -233,27 +264,24 @@ const App: React.FC = () => {
         if (ctx) {
              ctx.drawImage(img, box.x, box.y, box.width, box.height, 0, 0, box.width, box.height);
              
-             // Convert canvas to blob
              const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/jpeg'));
              if (blob) {
-                 console.log("Sending to AI for analysis...");
                  const analysis = await analyzeImageWithAI(blob);
-                 console.log("AI Suggested Sensitivity:", analysis.recommendedSensitivity);
-                 console.log("AI Reasoning:", analysis.reasoning);
                  
-                 // Update sensitivity with AI's recommendation
-                 setSensitivity(analysis.recommendedSensitivity);
+                 // Update sensitivity for this image
+                 updateImageBoxes(activeImage.id, boxes); // Save boxes again just in case
+                 setUploadedImages(prev => prev.map(img => 
+                    img.id === activeImage.id ? { ...img, sensitivity: analysis.recommendedSensitivity } : img
+                 ));
                  
-                 // Now run the standard local processing with this new sensitivity
-                 // effectively "driving" the local algorithm with AI intelligence
                  await processSignatureRegions(
-                    currentFile, 
+                    activeImage.file, 
                     boxesToProcess, 
                     analysis.recommendedSensitivity,
                     outputSize.width,
                     outputSize.height,
                     (signature, index, total) => {
-                      setSignatures(prev => [...prev, { ...signature, annotation: `AI: ${analysis.reasoning.slice(0, 20)}...` }]);
+                      setSignatures(prev => [...prev, { ...signature, sourceImageId: activeImage.id, annotation: `AI: ${analysis.reasoning.slice(0, 20)}...` }]);
                     }
                  );
              }
@@ -267,25 +295,61 @@ const App: React.FC = () => {
       return;
     }
 
-    // 3. Standard Local Mode (OpenCV)
+    // 3. Standard Local Mode (OpenCV) - Batch Process All Images
     try {
       setStatus(ProcessingStatus.PROCESSING);
       setSignatures([]); // Clear previous results
-      
-      // Stream processing: process one signature at a time
-      await processSignatureRegions(
-        currentFile, 
-        boxesToProcess, 
-        sensitivity,
-        outputSize.width,
-        outputSize.height,
-        (signature, index, total) => {
-          // Add each processed signature immediately
-          setSignatures(prev => [...prev, signature]);
-        }
+
+      // Prepare list of images to process, ensuring current active image has latest boxes
+      const imagesToProcess = uploadedImages.map(img => 
+        img.id === activeImage.id ? { ...img, boxes: boxes } : img
       );
+
+      const newSignatures: ProcessedSignature[] = [];
+
+      // Process all images sequentially to avoid memory spikes
+      const isMultiImage = imagesToProcess.length > 1;
+
+      for (const img of imagesToProcess) {
+        let imgBoxes = img.boxes;
+        
+        // If no boxes drawn:
+        // - Multi-image mode: Skip this image (to avoid lag)
+        // - Single-image mode: Fallback to processing the entire image
+        if (imgBoxes.length === 0) {
+          if (isMultiImage) {
+            continue;
+          }
+
+          imgBoxes = [{
+            id: `full-image-${img.id}`,
+            x: 0,
+            y: 0,
+            width: img.width,
+            height: img.height
+          }];
+        }
+
+        await processSignatureRegions(
+            img.file, 
+            imgBoxes, 
+            img.sensitivity,
+            outputSize.width,
+            outputSize.height,
+            (signature) => {
+              // Collect signatures as they are processed
+              // We add sourceImageId to track origin
+              newSignatures.push({ ...signature, sourceImageId: img.id });
+              // Optional: Update state incrementally if we want real-time feedback
+              // setSignatures(prev => [...prev, { ...signature, sourceImageId: img.id }]);
+            }
+        );
+      }
       
+      // Update state once with all results
+      setSignatures(newSignatures);
       setStatus(ProcessingStatus.COMPLETED);
+
     } catch (e) {
       console.error(e);
       setStatus(ProcessingStatus.ERROR);
@@ -293,44 +357,50 @@ const App: React.FC = () => {
   };
 
   const reProcessSignatures = async (newSensitivity: number, newWidth: number, newHeight: number) => {
-     if (!currentFile || detectedBoxes.length === 0) return;
+     if (!activeImage) return;
      
-     // Use local loading state to prevent unmounting the results view
+     // Prepare boxes logic matching handleProcessFromEditor
+     let boxesToProcess = activeImage.boxes;
+     if (boxesToProcess.length === 0) {
+        boxesToProcess = [{
+            id: `full-image-${activeImage.id}`,
+            x: 0,
+            y: 0,
+            width: activeImage.width,
+            height: activeImage.height
+        }];
+     }
+     
      setIsRecomputing(true);
      
      try {
-       // For reprocessing, we update existing signatures in place
-       const existingSignatures = [...signatures];
-       
-       // Whether in Local or AI mode, reprocessing always uses the local algorithm 
-       // with the updated parameters (sensitivity/size).
-       let updateIndex = 0;
        await processSignatureRegions(
-         currentFile, 
-         detectedBoxes, 
+         activeImage.file, 
+         boxesToProcess, 
          newSensitivity, 
          newWidth, 
          newHeight,
          (newSig, index, total) => {
-           // Update existing signature at the same index
-           if (updateIndex < existingSignatures.length) {
-             const existing = existingSignatures[updateIndex];
-             setSignatures(prev => {
-               const updated = [...prev];
-               const idx = updated.findIndex(s => s.id === existing.id);
-               if (idx >= 0) {
-                 // Keep the annotation (e.g., AI reasoning or user notes)
-                 updated[idx] = { ...newSig, annotation: existing.annotation };
-               }
-               return updated;
+           setSignatures(prev => {
+             const updated = [...prev];
+             // Update all signatures that match this ID (should be unique per image usually)
+             // But if we have multiple signatures with same ID (bug), we update all?
+             // Ideally we map.
+             return updated.map(s => {
+                 if (s.id === newSig.id && s.sourceImageId === activeImage.id) {
+                     return {
+                         ...newSig,
+                         sourceImageId: activeImage.id,
+                         annotation: s.annotation
+                     };
+                 }
+                 return s;
              });
-             updateIndex++;
-           }
+           });
          }
        );
      } catch (e) {
        console.error(e);
-       // Optional: Show toast error
      } finally {
        setIsRecomputing(false);
      }
@@ -338,9 +408,13 @@ const App: React.FC = () => {
 
   const handleSensitivityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseInt(e.target.value);
-    setSensitivity(val);
-    if (status === ProcessingStatus.COMPLETED) {
-      reProcessSignatures(val, outputSize.width, outputSize.height);
+    if (activeImage) {
+        setUploadedImages(prev => prev.map(img => img.id === activeImage.id ? { ...img, sensitivity: val } : img));
+        if (status === ProcessingStatus.COMPLETED) {
+            reProcessSignatures(val, outputSize.width, outputSize.height);
+        }
+    } else {
+        setDefaultSensitivity(val);
     }
   };
 
@@ -353,8 +427,8 @@ const App: React.FC = () => {
   };
 
   const handleOutputSizeBlur = () => {
-    if (status === ProcessingStatus.COMPLETED) {
-      reProcessSignatures(sensitivity, outputSize.width, outputSize.height);
+    if (status === ProcessingStatus.COMPLETED && activeImage) {
+      reProcessSignatures(activeImage.sensitivity, outputSize.width, outputSize.height);
     }
   };
 
@@ -379,10 +453,8 @@ const App: React.FC = () => {
       if (folder) {
         signatures.forEach((sig, idx) => {
           const name = sig.annotation ? sig.annotation : `签名_${idx + 1}`;
-          // Exclude pixel ratio from filename
           const filename = `电子签名_${name}.png`;
           
-          // processedDataUrl is data:image/png;base64,...
           const base64Data = sig.processedDataUrl.split(',')[1];
           folder.file(filename, base64Data, { base64: true });
         });
@@ -399,14 +471,28 @@ const App: React.FC = () => {
   const handleReset = () => {
     setStatus(ProcessingStatus.IDLE);
     setSignatures([]);
-    setOriginalImage(null);
-    setCurrentFile(null);
-    setDetectedBoxes([]);
+    setUploadedImages([]);
+    setActiveImageId(null);
     setIsRecomputing(false);
   };
 
   const handleBackToEditor = () => {
     setStatus(ProcessingStatus.EDITING);
+  };
+
+  const removeImage = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation(); // Prevent selecting the image
+    const newImages = uploadedImages.filter(img => img.id !== id);
+    
+    if (newImages.length === 0) {
+      handleReset(); // Go back to start if no images
+    } else {
+      setUploadedImages(newImages);
+      if (activeImageId === id) {
+        // If we removed the active image, select the first one (or adjacent)
+        setActiveImageId(newImages[0].id);
+      }
+    }
   };
 
   const toggleTheme = () => {
@@ -447,17 +533,86 @@ const App: React.FC = () => {
       )}
 
       {/* Full Screen Editor Mode */}
-      {status === ProcessingStatus.EDITING && originalImage && (
-        <ImageEditor 
-          imageUrl={originalImage}
-          initialBoxes={detectedBoxes}
-          originalWidth={imgDims.w}
-          originalHeight={imgDims.h}
-          onConfirm={(boxes) => handleProcessFromEditor(boxes, 'local')}
-          onProcessWithAI={(boxes) => handleProcessFromEditor(boxes, 'ai')}
-          onCancel={handleReset}
-          theme={theme}
-        />
+      {status === ProcessingStatus.EDITING && activeImage && (
+        <div className="flex h-full w-full overflow-hidden">
+             {/* Sidebar */}
+             <div className={`w-20 sm:w-24 flex-shrink-0 flex flex-col px-3 z-20 m-4 rounded-3xl border shadow-2xl ${
+                 isCyber ? 'bg-slate-900/10 backdrop-blur-md border-slate-800/50' : 'bg-white/10 backdrop-blur-xl border-white/40'
+             }`} style={{ height: 'calc(100% - 2rem)' }}>
+                 {/* Scrollable List */}
+                <div className="flex-1 overflow-y-auto flex flex-col gap-3 pt-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+                    {uploadedImages.map(img => (
+                        <div 
+                            key={img.id}
+                            onClick={() => setActiveImageId(img.id)}
+                            className={`flex-shrink-0 relative aspect-square cursor-pointer rounded-2xl overflow-hidden border-2 transition-all group ${
+                                activeImageId === img.id 
+                                    ? (isCyber ? 'border-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.3)]' : 'border-blue-500 ring-2 ring-blue-100')
+                                    : 'border-transparent hover:border-gray-400 opacity-70 hover:opacity-100'
+                            }`}
+                        >
+                            <img src={img.previewUrl} alt="thumbnail" className="w-full h-full object-cover" />
+                            <div className={`absolute bottom-0 left-0 right-0 h-1 ${img.boxes.length > 0 ? (isCyber ? 'bg-cyan-500' : 'bg-blue-500') : 'bg-transparent'}`}></div>
+                            
+                            {/* Delete Button */}
+                            <button 
+                                onClick={(e) => removeImage(e, img.id)}
+                                className={`absolute top-1 right-1 p-1 rounded-full opacity-0 group-hover:opacity-100 transition-all hover:scale-110 ${
+                                    isCyber ? 'bg-black/60 text-red-400 hover:bg-red-900/80 hover:text-red-300' : 'bg-white/80 text-red-500 hover:bg-red-100 hover:text-red-600 shadow-sm'
+                                }`}
+                            >
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                    ))}
+                </div>
+                
+                {/* Fixed Upload Button */}
+                <label className={`mt-3 flex-shrink-0 aspect-square flex flex-col items-center justify-center cursor-pointer rounded-2xl border-2 border-dashed transition-all ${
+                   isCyber 
+                       ? 'border-slate-700 hover:border-cyan-500/50 hover:bg-slate-800 text-slate-500 hover:text-cyan-400' 
+                       : 'border-gray-300 hover:border-blue-400 hover:bg-white text-gray-400 hover:text-blue-500'
+                }`}>
+                   <input 
+                       type="file" 
+                       multiple 
+                       accept="image/*" 
+                       className="hidden" 
+                       onChange={(e) => {
+                           if(e.target.files && e.target.files.length > 0) addFiles(Array.from(e.target.files));
+                       }}
+                   />
+                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                   </svg>
+                </label>
+
+                 {/* Counter Footer */}
+                 <div className={`flex-shrink-0 py-2 text-center text-xs font-medium ${
+                     isCyber ? 'text-cyan-400/70' : 'text-slate-500'
+                 }`}>
+                     {uploadedImages.findIndex(img => img.id === activeImageId) + 1} / {uploadedImages.length}
+                 </div>
+             </div>
+ 
+             {/* Editor Area */}
+             <div className="flex-1 relative h-full overflow-hidden bg-black/5">
+                <ImageEditor 
+                  key={activeImage.id}
+                  imageUrl={activeImage.previewUrl}
+                  initialBoxes={activeImage.boxes}
+                  originalWidth={activeImage.width}
+                  originalHeight={activeImage.height}
+                  onConfirm={(boxes) => handleProcessFromEditor(boxes, 'local')}
+                  onProcessWithAI={(boxes) => handleProcessFromEditor(boxes, 'ai')}
+                  onCancel={handleReset}
+                  onBoxesChange={(boxes) => updateImageBoxes(activeImage.id, boxes)}
+                  theme={theme}
+                />
+             </div>
+        </div>
       )}
 
       {/* Scrollable Content Area */}
@@ -563,7 +718,7 @@ const App: React.FC = () => {
                   </p>
                   <p className={`text-xs sm:text-sm ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400'}`}>支持 JPG, PNG等 格式输入，可直接粘贴截图</p>
                 </div>
-                <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} />
+                <input type="file" className="hidden" multiple accept="image/*" onChange={handleFileUpload} />
               </label>
 
               {/* URL Input */}

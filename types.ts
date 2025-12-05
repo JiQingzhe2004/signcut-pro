@@ -1,5 +1,6 @@
 export interface ProcessedSignature {
   id: string;
+  sourceImageId?: string; // ID of the source image
   originalDataUrl: string; // The cropped raw image
   processedDataUrl: string; // The binarized 2:1 image
   width: number;
@@ -37,3 +38,13 @@ export type Theme = 'cyberpunk' | 'ios';
 
 export type ProcessingMode = 'local' | 'ai';
 
+export interface UploadedImage {
+  id: string;
+  file: File;
+  previewUrl: string;
+  width: number;
+  height: number;
+  boxes: SelectionBox[];
+  sensitivity: number;
+  name: string;
+}

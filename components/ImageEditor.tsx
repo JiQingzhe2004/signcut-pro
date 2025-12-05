@@ -11,6 +11,7 @@ interface ImageEditorProps {
   onConfirm: (boxes: SelectionBox[]) => void;
   onProcessWithAI: (boxes: SelectionBox[]) => void;
   onCancel: () => void;
+  onBoxesChange?: (boxes: SelectionBox[]) => void;
   theme: Theme;
 }
 
@@ -25,6 +26,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   onConfirm,
   onProcessWithAI,
   onCancel,
+  onBoxesChange,
   theme
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -44,6 +46,13 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
     panRef.current = pan;
     zoomRef.current = zoom;
   }, [pan, zoom]);
+
+  // Sync boxes to parent
+  useEffect(() => {
+    if (onBoxesChange) {
+      onBoxesChange(boxes);
+    }
+  }, [boxes, onBoxesChange]);
 
   // Interaction State
   const [startPoint, setStartPoint] = useState<{ x: number, y: number } | null>(null);
