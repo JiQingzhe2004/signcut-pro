@@ -52,7 +52,31 @@ const App: React.FC = () => {
   // Download Modal State
   const [showFolderModal, setShowFolderModal] = useState(false);
 
+  // URL Input State
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
+  const [urlLoading, setUrlLoading] = useState(false);
+
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+
+  const handleUrlSubmit = async () => {
+    if (!urlInput) return;
+    setUrlLoading(true);
+    try {
+      const response = await fetch(urlInput);
+      if (!response.ok) throw new Error('Network response was not ok');
+      const blob = await response.blob();
+      const file = new File([blob], "url_image.png", { type: blob.type });
+      await processFile(file);
+      setShowUrlInput(false);
+      setUrlInput('');
+    } catch (error) {
+      console.error("Error loading image from URL:", error);
+      alert("无法加载图片，可能是跨域限制或链接无效。");
+    } finally {
+      setUrlLoading(false);
+    }
+  };
 
   // Load AI Config on Mount
   useEffect(() => {
@@ -82,6 +106,29 @@ const App: React.FC = () => {
 
     scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
     return () => scrollContainer.removeEventListener('scroll', handleScroll);
+  }, [status]);
+
+  // Handle Paste Event
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      if (status !== ProcessingStatus.IDLE) return;
+      
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            processFile(file);
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
   }, [status]);
 
   const processFile = async (file: File) => {
@@ -512,12 +559,87 @@ const App: React.FC = () => {
                     </svg>
                   </div>
                   <p className={`mb-2 text-sm sm:text-base font-bold uppercase tracking-wider ${isCyber ? 'text-cyan-100' : 'text-slate-700'}`}>
-                    {isCyber ? '点击或拖拽上传数据' : '点击或拖拽上传图片'}
+                    {isCyber ? '点击、拖拽或粘贴上传数据' : '点击、拖拽或粘贴上传图片'}
                   </p>
-                  <p className={`text-xs sm:text-sm ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400'}`}>支持 JPG, PNG 格式输入</p>
+                  <p className={`text-xs sm:text-sm ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400'}`}>支持 JPG, PNG等 格式输入，可直接粘贴截图</p>
                 </div>
                 <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} />
               </label>
+
+              {/* URL Input */}
+              <div className={`mt-8 mx-auto transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] ${showUrlInput ? 'w-full max-w-lg px-4' : 'w-44'}`}>
+                <div className="relative h-12">
+                  {/* Button State */}
+                  <div className={`absolute inset-0 w-full h-full transition-all duration-300 ${showUrlInput ? 'opacity-0 scale-90 pointer-events-none' : 'opacity-100 scale-100'}`}>
+                    <button 
+                      onClick={() => setShowUrlInput(true)} 
+                      className={`group w-full h-full flex items-center justify-center gap-2 rounded-full text-sm font-medium transition-all duration-300 ${
+                        isCyber
+                          ? 'bg-cyan-950/20 border border-cyan-900/50 text-cyan-400 hover:bg-cyan-950/40 hover:border-cyan-500/50 hover:shadow-[0_0_15px_rgba(6,182,212,0.15)]'
+                          : 'bg-white border border-slate-200 text-slate-600 shadow-sm hover:shadow-md hover:text-blue-600 hover:border-blue-200'
+                      }`}
+                    >
+                      <svg className="w-4 h-4 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                      </svg>
+                      <span>输入链接</span>
+                    </button>
+                  </div>
+
+                  {/* Input State */}
+                  <div className={`absolute inset-0 w-full h-full flex items-center gap-3 transition-all duration-500 delay-75 ${showUrlInput ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}>
+                    <div className={`flex-1 h-full flex items-center rounded-full overflow-hidden border transition-colors ${
+                      isCyber 
+                        ? 'bg-slate-900/80 border-slate-700 shadow-inner' 
+                        : 'bg-white border-slate-200 shadow-sm'
+                    }`}>
+                      <div className={`pl-4 flex-shrink-0 ${isCyber ? 'text-slate-600' : 'text-slate-400'}`}>
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                        </svg>
+                      </div>
+                      <input 
+                        type="text"
+                        value={urlInput}
+                        onChange={(e) => setUrlInput(e.target.value)}
+                        placeholder="https://example.com/image.png"
+                        className={`flex-1 h-full bg-transparent border-none outline-none px-3 text-sm ${
+                          isCyber
+                            ? 'text-white placeholder-slate-600'
+                            : 'text-slate-800 placeholder-slate-400'
+                        }`}
+                        onKeyDown={(e) => e.key === 'Enter' && handleUrlSubmit()}
+                        autoFocus={showUrlInput}
+                      />
+                      <button 
+                         onClick={handleUrlSubmit}
+                         disabled={urlLoading}
+                         className={`h-full px-6 flex items-center justify-center text-sm font-medium transition-all whitespace-nowrap ${
+                           isCyber
+                             ? 'bg-cyan-950/40 text-cyan-400 hover:bg-cyan-500 hover:text-black border-l border-slate-700'
+                             : 'bg-black text-white hover:bg-gray-800'
+                         }`}
+                       >
+                        {urlLoading ? (
+                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : '确定'}
+                      </button>
+                    </div>
+                    
+                    <button 
+                      onClick={() => setShowUrlInput(false)}
+                      className={`h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-full transition-all ${isCyber ? 'text-slate-500 hover:text-slate-300 hover:bg-slate-800' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
 
 
             </div>
