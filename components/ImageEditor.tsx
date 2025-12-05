@@ -16,7 +16,9 @@ import {
   Wand2,
   Check,
   Loader2,
-  Move
+  Move,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 interface ImageEditorProps {
@@ -29,6 +31,7 @@ interface ImageEditorProps {
   onCancel: () => void;
   onBoxesChange?: (boxes: SelectionBox[]) => void;
   theme: Theme;
+  onToggleTheme?: () => void;
 }
 
 type InteractionMode = 'IDLE' | 'DRAWING' | 'MOVING' | 'RESIZING' | 'ROTATING';
@@ -43,7 +46,8 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   onProcessWithAI,
   onCancel,
   onBoxesChange,
-  theme
+  theme,
+  onToggleTheme
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -58,6 +62,27 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const panRef = useRef(pan);
 
+  // History State
+  const [history, setHistory] = useState<SelectionBox[][]>([initialBoxes]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+
+  // Helper for History
+  const addToHistory = (newBoxes: SelectionBox[]) => {
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(newBoxes);
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+  };
+
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      const prevBoxes = history[historyIndex - 1];
+      setBoxes(prevBoxes);
+      setHistoryIndex(historyIndex - 1);
+      setSelectedId(null);
+    }
+  };
+
   // Keep refs in sync
   useEffect(() => {
     panRef.current = pan;
@@ -69,7 +94,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
     if (onBoxesChange) {
       onBoxesChange(boxes);
     }
-  }, [boxes, onBoxesChange]);
+  }, [boxes]);
 
   // Interaction State
   const [startPoint, setStartPoint] = useState<{ x: number, y: number } | null>(null);
@@ -529,10 +554,14 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
       if (mode === 'DRAWING' && tempBox) {
         if (tempBox.width > 10 && tempBox.height > 10) {
           const newBox = { ...tempBox, id: crypto.randomUUID(), type: drawMode };
-          setBoxes(prev => [...prev, newBox]);
+          const newBoxes = [...boxes, newBox];
+          setBoxes(newBoxes);
+          addToHistory(newBoxes);
           setSelectedId(newBox.id);
         }
         setTempBox(null);
+      } else if (mode === 'MOVING' || mode === 'RESIZING' || mode === 'ROTATING') {
+        addToHistory(boxes);
       }
       setMode('IDLE');
       setStartPoint(null);
@@ -566,12 +595,15 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
 
 
   const removeBox = (id: string) => {
-    setBoxes(boxes.filter(b => b.id !== id));
+    const newBoxes = boxes.filter(b => b.id !== id);
+    setBoxes(newBoxes);
+    addToHistory(newBoxes);
     if (selectedId === id) setSelectedId(null);
   };
 
   const handleClear = () => {
     setBoxes([]);
+    addToHistory([]);
     setSelectedId(null);
   };
 
@@ -611,31 +643,51 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
 
            {/* Right: Controls */}
            <div className="flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
-             {!isPreviewMode && boxes.length > 0 && (
-               <Button variant="danger" onClick={handleClear} className="text-xs px-2 sm:px-3 py-2 touch-manipulation" theme={theme}>
-                 {isCyber ? '清除' : '清空'}
-               </Button>
-             )}
-             
-             <div className={`h-6 w-px mx-1 sm:mx-2 ${isCyber ? 'bg-slate-700' : 'bg-slate-300'}`}></div>
-
-             <Button variant="ghost" onClick={onCancel} className="text-xs px-2 sm:px-3 py-2 touch-manipulation flex-1 sm:flex-none" theme={theme}>
-               取消
+             <Button variant="ghost" onClick={onCancel} className="text-xs px-2 sm:px-3 py-2 touch-manipulation flex-1 sm:flex-none flex items-center justify-center" theme={theme}>
+               <X className="w-4 h-4 sm:mr-1" />
+               <span className="hidden sm:inline">取消</span>
              </Button>
              
-             <Button variant="secondary" onClick={() => onProcessWithAI(boxes)} className="text-xs px-3 sm:px-4 py-2 min-w-[80px] sm:min-w-[90px] touch-manipulation flex-1 sm:flex-none border-purple-200 text-purple-700 hover:bg-purple-50" theme={theme}>
+             <Button variant="secondary" onClick={() => onProcessWithAI(boxes)} className="text-xs px-3 sm:px-4 py-2 min-w-[80px] sm:min-w-[90px] touch-manipulation flex-1 sm:flex-none border-purple-200 text-purple-700 hover:bg-purple-50 flex items-center justify-center" theme={theme}>
+               <Wand2 className="w-4 h-4 mr-1" />
                {isCyber ? 'AI 加速' : 'AI 处理'}
              </Button>
 
-             <Button onClick={() => onConfirm(boxes)} className="text-xs px-3 sm:px-4 py-2 min-w-[80px] sm:min-w-[100px] touch-manipulation flex-1 sm:flex-none" theme={theme}>
-               {boxes.length === 0 ? '本地处理' : (isCyber ? '标准提取' : '确认选择')}
-             </Button>
+            <Button onClick={() => onConfirm(boxes)} className="text-xs px-3 sm:px-4 py-2 min-w-[80px] sm:min-w-[100px] touch-manipulation flex-1 sm:flex-none flex items-center justify-center" theme={theme}>
+              <Check className="w-4 h-4 mr-1" />
+              {boxes.length === 0 ? '本地处理' : (isCyber ? '标准提取' : '确认选择')}
+            </Button>
+
+             <div className={`h-6 w-px mx-1 sm:mx-2 ${isCyber ? 'bg-slate-700' : 'bg-slate-300'}`}></div>
+
+            <button 
+              onClick={onToggleTheme}
+              className={`p-2 sm:p-2.5 rounded-full transition-all touch-manipulation ${isCyber ? 'bg-slate-800 text-cyan-400 hover:bg-slate-700 active:scale-95' : 'bg-white text-slate-800 shadow-sm hover:shadow-md active:scale-95'}`}
+              title="切换主题"
+            >
+              {isCyber ? (
+                <Sun className="w-5 h-5" />
+              ) : (
+                <Moon className="w-5 h-5" />
+              )}
+            </button>
            </div>
         </div>
       </div>
 
       {/* Floating Bottom Right Tools */}
       <div className="fixed bottom-20 right-4 z-50 flex flex-col gap-3">
+        {/* Clear Button (Independent) */}
+        <Tooltip content="清空" theme={theme}>
+          <button 
+            onClick={handleClear}
+            disabled={boxes.length === 0}
+            className={`p-3 rounded-full shadow-lg transition-all active:scale-95 backdrop-blur-md ${isCyber ? 'bg-slate-900/80 text-slate-400 border border-slate-700/50 hover:text-cyan-400 disabled:opacity-30' : 'bg-white/80 text-slate-500 border border-slate-200/50 hover:text-blue-600 disabled:opacity-30'}`}
+          >
+            <Trash2 className="w-6 h-6" />
+          </button>
+        </Tooltip>
+
         {/* Draw Mode Controls */}
         <div className={`flex flex-col items-center rounded-full p-1 shadow-lg ${isCyber ? 'bg-slate-900/0 border border-slate-700/50' : 'bg-white/0 border border-slate-200/50'} backdrop-blur-md`}>
           <Tooltip content={isCyber ? "包含区域" : "选中区域"} theme={theme}>
@@ -730,6 +782,8 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
           
           {/* Cyber Grid Overlay */}
           {isCyber && <div className="absolute inset-0 bg-[linear-gradient(rgba(6,182,212,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(6,182,212,0.1)_1px,transparent_1px)] bg-[size:50px_50px] pointer-events-none opacity-20"></div>}
+
+
 
           {/* Render Boxes */}
           {boxes.map((box, idx) => (
@@ -888,9 +942,7 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
             }
           }}
         >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
+          <RotateCw className="w-3.5 h-3.5" />
         </div>
       )}
 
@@ -910,9 +962,7 @@ const BoxOverlay: React.FC<BoxOverlayProps> = ({
             marginLeft: `${4 / zoom}px`
           }}
         >
-          <svg className="w-3.5 h-3.5 sm:w-3 sm:h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <X className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
         </div>
       )}
 

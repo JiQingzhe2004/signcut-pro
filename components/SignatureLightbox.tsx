@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ProcessedSignature, Theme } from '../types';
+import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 
 interface SignatureLightboxProps {
   signatures: ProcessedSignature[];
@@ -174,26 +175,28 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
 
       {/* Main Content Container */}
       <div 
-        className="relative w-full h-full flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 pt-24 sm:pt-28 pb-20 sm:pb-24"
+        className="relative w-full h-full overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Info Bar & Close Button Wrapper */}
+        <div className="absolute top-4 sm:top-6 left-1/2 -translate-x-1/2 w-full max-w-4xl z-[10000] px-4 flex items-stretch gap-3">
         {/* Info Bar - Moved to Top, below header */}
-        <div className={`absolute top-20 sm:top-24 left-1/2 -translate-x-1/2 w-full max-w-4xl flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 z-[10000] ${
+        <div className={`flex-1 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 ${
           isCyber 
-            ? 'px-4 sm:px-6 py-3 sm:py-4 bg-slate-900/60 backdrop-blur-xl border border-cyan-500/20 rounded-2xl shadow-[0_0_30px_rgba(6,182,212,0.2)]' 
-            : 'px-4 sm:px-6 py-3 sm:py-4 bg-white/90 backdrop-blur-xl rounded-2xl shadow-xl'
+            ? 'px-6 sm:px-8 py-3 sm:py-4 bg-slate-900/60 backdrop-blur-2xl border border-cyan-500/20 rounded-full shadow-[0_0_30px_rgba(6,182,212,0.2)]' 
+            : 'px-6 sm:px-8 py-3 sm:py-4 bg-white/60 backdrop-blur-2xl rounded-full shadow-xl'
         }`}>
           {/* Left: Annotation */}
           <div className="flex-1 text-center sm:text-left">
-            {currentSignature.annotation ? (
+          {currentSignature.annotation ? (
               <div className={`text-base sm:text-lg font-semibold ${
-                isCyber ? 'text-cyan-400 font-mono' : 'text-slate-900 font-sans'
+                isCyber ? 'text-white font-mono' : 'text-slate-900 font-sans'
               }`}>
                 {currentSignature.annotation}
               </div>
             ) : (
               <div className={`text-sm sm:text-base ${
-                isCyber ? 'text-cyan-300/70 font-mono' : 'text-slate-500 font-sans'
+                isCyber ? 'text-cyan-200 font-mono' : 'text-slate-800 font-sans'
               }`}>
                 签名 {activeIndex + 1}
               </div>
@@ -202,7 +205,7 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
 
           {/* Right: Size & Index */}
           <div className={`flex items-center gap-4 sm:gap-6 text-xs sm:text-sm ${
-            isCyber ? 'text-cyan-200/80 font-mono' : 'text-slate-600 font-sans'
+            isCyber ? 'text-white font-mono' : 'text-slate-900 font-sans'
           }`}>
             <div className="flex items-center gap-2">
               <span className="opacity-60">尺寸</span>
@@ -224,19 +227,20 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
           </div>
         </div>
 
-        {/* Close Button */}
+        {/* Close Button - Attached to right */}
         <button 
           onClick={onClose}
-          className={`absolute top-20 sm:top-24 right-4 sm:right-6 p-3 rounded-full transition-all duration-300 z-[10000] group/close touch-manipulation active:scale-95 ${
+          className={`w-10 h-10 sm:w-14 sm:h-14 flex-shrink-0 flex items-center justify-center rounded-full transition-all duration-300 group/close touch-manipulation active:scale-95 ${
             isCyber 
-              ? 'bg-slate-900/80 hover:bg-slate-800/90 text-cyan-400 border border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)]' 
-              : 'bg-white/95 hover:bg-white text-slate-800 shadow-xl hover:shadow-2xl'
+              ? 'bg-slate-900/60 hover:bg-slate-800/80 text-cyan-400 border border-cyan-500/20 shadow-[0_0_20px_rgba(6,182,212,0.2)] backdrop-blur-2xl' 
+              : 'bg-white/60 hover:bg-white/80 text-slate-800 shadow-xl backdrop-blur-2xl'
           }`}
         >
-          <svg className="w-6 h-6 group-active/close:rotate-90 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <X className="w-6 h-6 group-active/close:rotate-90 transition-transform duration-300" />
         </button>
+        </div>
+
+
         {/* Navigation Buttons */}
         {signatures.length > 1 && (
           <>
@@ -246,15 +250,13 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
                 e.stopPropagation();
                 handlePrevious();
               }}
-              className={`absolute left-4 sm:left-6 md:left-8 top-1/2 -translate-y-1/2 p-3 sm:p-4 rounded-full transition-all duration-300 z-[10000] group/prev touch-manipulation active:scale-95 ${
+              className={`absolute left-4 sm:left-6 md:left-8 top-1/2 -translate-y-1/2 p-3 sm:p-4 rounded-full transition-all duration-300 z-[10000] group/prev touch-manipulation active:scale-95 backdrop-blur-2xl ${
                 isCyber
-                  ? 'bg-slate-900/80 hover:bg-slate-800/90 text-cyan-400 border border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)]'
-                  : 'bg-white/95 hover:bg-white text-slate-800 shadow-xl hover:shadow-2xl'
+                  ? 'bg-slate-900/60 hover:bg-slate-800/80 text-cyan-400 border border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)]'
+                  : 'bg-white/60 hover:bg-white/80 text-slate-800 shadow-xl hover:shadow-2xl'
               }`}
             >
-              <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-              </svg>
+              <ChevronLeft className="w-6 h-6 sm:w-7 sm:h-7" />
             </button>
 
             {/* Next Button */}
@@ -263,67 +265,57 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
                 e.stopPropagation();
                 handleNext();
               }}
-              className={`absolute right-4 sm:right-6 md:right-8 top-1/2 -translate-y-1/2 p-3 sm:p-4 rounded-full transition-all duration-300 z-[10000] group/next touch-manipulation active:scale-95 ${
+              className={`absolute right-4 sm:right-6 md:right-8 top-1/2 -translate-y-1/2 p-3 sm:p-4 rounded-full transition-all duration-300 z-[10000] group/next touch-manipulation active:scale-95 backdrop-blur-2xl ${
                 isCyber
-                  ? 'bg-slate-900/80 hover:bg-slate-800/90 text-cyan-400 border border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)]'
-                  : 'bg-white/95 hover:bg-white text-slate-800 shadow-xl hover:shadow-2xl'
+                  ? 'bg-slate-900/60 hover:bg-slate-800/80 text-cyan-400 border border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)]'
+                  : 'bg-white/60 hover:bg-white/80 text-slate-800 shadow-xl hover:shadow-2xl'
               }`}
             >
-              <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-              </svg>
+              <ChevronRight className="w-6 h-6 sm:w-7 sm:h-7" />
             </button>
           </>
         )}
 
         {/* Zoom Controls */}
-        <div className={`absolute bottom-24 sm:bottom-32 right-4 sm:right-6 flex flex-col gap-2 z-[10000] ${
+        <div className={`absolute bottom-28 sm:bottom-36 right-4 sm:right-8 flex flex-col gap-3 z-[10000] ${
           isCyber ? 'text-cyan-400' : 'text-slate-700'
         }`}>
           <button
             onClick={handleZoomIn}
-            className={`p-2 rounded-full transition-all ${
-              isCyber ? 'bg-slate-900/80 border border-cyan-500/30 hover:bg-slate-800' : 'bg-white/90 shadow-lg hover:bg-white'
+            className={`p-3 sm:p-4 rounded-full transition-all backdrop-blur-2xl ${
+              isCyber ? 'bg-slate-900/60 border border-cyan-500/30 hover:bg-slate-800/80 hover:shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-white/60 shadow-lg hover:bg-white/80 hover:shadow-xl'
             }`}
             title="放大"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
+            <ZoomIn className="w-6 h-6" />
           </button>
           <button
             onClick={handleZoomOut}
-            className={`p-2 rounded-full transition-all ${
-              isCyber ? 'bg-slate-900/80 border border-cyan-500/30 hover:bg-slate-800' : 'bg-white/90 shadow-lg hover:bg-white'
+            className={`p-3 sm:p-4 rounded-full transition-all backdrop-blur-2xl ${
+              isCyber ? 'bg-slate-900/60 border border-cyan-500/30 hover:bg-slate-800/80 hover:shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-white/60 shadow-lg hover:bg-white/80 hover:shadow-xl'
             }`}
             title="缩小"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-            </svg>
+            <ZoomOut className="w-6 h-6" />
           </button>
           <button
             onClick={handleResetZoom}
-            className={`p-2 rounded-full transition-all ${
-              isCyber ? 'bg-slate-900/80 border border-cyan-500/30 hover:bg-slate-800' : 'bg-white/90 shadow-lg hover:bg-white'
+            className={`p-3 sm:p-4 rounded-full transition-all backdrop-blur-2xl ${
+              isCyber ? 'bg-slate-900/60 border border-cyan-500/30 hover:bg-slate-800/80 hover:shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-white/60 shadow-lg hover:bg-white/80 hover:shadow-xl'
             }`}
             title="重置"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
+            <RotateCcw className="w-6 h-6" />
           </button>
         </div>
 
-        {/* Image Container - Maximized to fill available space */}
+        {/* Image Container - Full Screen */}
         <div 
-          className="flex-1 w-full flex items-center justify-center min-h-0 overflow-hidden"
+          className="absolute inset-0 flex items-center justify-center overflow-hidden z-0"
           onWheel={handleImageWheel}
         >
           <div 
-            className={`relative w-full h-full max-w-[95vw] max-h-[calc(100vh-280px)] flex items-center justify-center ${
-              isCyber ? 'p-4 sm:p-6' : 'p-2 sm:p-4'
-            }`}
+            className="relative w-full h-full flex items-center justify-center"
           >
             <img
               src={currentSignature.processedDataUrl}
@@ -332,11 +324,6 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
                 scale > 1 ? 'cursor-move' : 'cursor-default'
               }`}
               style={{
-                // Fill available space while maintaining aspect ratio
-                maxWidth: '100%',
-                maxHeight: '100%',
-                width: 'auto',
-                height: 'auto',
                 transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`
               }}
               onMouseDown={handleMouseDown}

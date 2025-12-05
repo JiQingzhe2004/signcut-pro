@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { processSignatureRegions, recommendSensitivity } from './services/imageProcessing';
@@ -11,6 +11,26 @@ import { Logo } from './components/Logo';
 import { SignatureLightbox } from './components/SignatureLightbox';
 import { AiHelpModal } from './components/AiHelpModal';
 import { FolderNameModal } from './components/FolderNameModal';
+  import { 
+    Trash2, 
+    Upload, 
+    Settings, 
+    Sun, 
+    Moon, 
+    RotateCcw, 
+    Link, 
+    X, 
+    HelpCircle, 
+    AlertCircle, 
+    Loader2,
+    Image as ImageIcon,
+    Plus,
+    CloudUpload,
+    Edit3,
+    Download,
+    ArrowLeft,
+    Hash
+  } from 'lucide-react';
 
 
 const App: React.FC = () => {
@@ -217,6 +237,11 @@ const App: React.FC = () => {
       img.id === id ? { ...img, boxes } : img
     ));
   };
+
+  const handleBoxesChange = useCallback((boxes: SelectionBox[]) => {
+    if (!activeImageId) return;
+    updateImageBoxes(activeImageId, boxes);
+  }, [activeImageId]);
 
   const handleProcessFromEditor = async (boxes: SelectionBox[], mode: 'local' | 'ai' = 'local') => {
     if (!activeImage) return;
@@ -562,9 +587,7 @@ const App: React.FC = () => {
                                     isCyber ? 'bg-black/60 text-red-400 hover:bg-red-900/80 hover:text-red-300' : 'bg-white/80 text-red-500 hover:bg-red-100 hover:text-red-600 shadow-sm'
                                 }`}
                             >
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
+                                <Trash2 className="w-3 h-3" />
                             </button>
                         </div>
                     ))}
@@ -585,9 +608,7 @@ const App: React.FC = () => {
                            if(e.target.files && e.target.files.length > 0) addFiles(Array.from(e.target.files));
                        }}
                    />
-                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                   </svg>
+                   <Plus className="w-6 h-6" />
                 </label>
 
                  {/* Counter Footer */}
@@ -609,9 +630,10 @@ const App: React.FC = () => {
                   onConfirm={(boxes) => handleProcessFromEditor(boxes, 'local')}
                   onProcessWithAI={(boxes) => handleProcessFromEditor(boxes, 'ai')}
                   onCancel={handleReset}
-                  onBoxesChange={(boxes) => updateImageBoxes(activeImage.id, boxes)}
-                  theme={theme}
-                />
+                 onBoxesChange={handleBoxesChange}
+                 theme={theme}
+                 onToggleTheme={toggleTheme}
+               />
              </div>
         </div>
       )}
@@ -620,7 +642,7 @@ const App: React.FC = () => {
       {status !== ProcessingStatus.EDITING && (
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto custom-scrollbar flex flex-col relative z-10 h-full w-full">
           {/* Header */}
-      {status !== ProcessingStatus.EDITING && (
+      {status !== ProcessingStatus.EDITING && !lightboxOpen && (
         <header 
           className={`${headerClass} sticky top-0 z-50 transition-transform duration-500 ease-in-out ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}
         >
@@ -636,10 +658,7 @@ const App: React.FC = () => {
                 className={`p-2 sm:p-2.5 rounded-full transition-all touch-manipulation ${isCyber ? 'bg-slate-800 text-cyan-400 hover:bg-slate-700 active:scale-95' : 'bg-white text-slate-800 shadow-sm hover:shadow-md active:scale-95'}`}
                 title="设置 AI API"
               >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+                <Settings className="w-5 h-5" />
               </button>
 
               {/* Theme Toggle */}
@@ -649,18 +668,15 @@ const App: React.FC = () => {
                 title="切换主题"
               >
                 {isCyber ? (
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
+                  <Sun className="w-5 h-5" />
                 ) : (
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                  </svg>
+                  <Moon className="w-5 h-5" />
                 )}
               </button>
 
               {status !== ProcessingStatus.IDLE && (
-                <Button variant="ghost" onClick={handleReset} className="text-xs px-3 py-2 touch-manipulation" theme={theme}>
+                <Button variant="ghost" onClick={handleReset} className="text-xs px-3 py-2 touch-manipulation flex items-center gap-1" theme={theme}>
+                  <RotateCcw className="w-4 h-4" />
                   <span className="hidden sm:inline">{isCyber ? '// 重置系统' : '重新开始'}</span>
                   <span className="sm:hidden">{isCyber ? '重置' : '重置'}</span>
                 </Button>
@@ -710,9 +726,7 @@ const App: React.FC = () => {
               >
                 <div className="flex flex-col items-center justify-center pt-5 pb-6 px-4">
                   <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center mb-4 sm:mb-6 group-active:scale-110 transition-transform ${isCyber ? 'bg-slate-800 border border-slate-700 group-active:border-cyan-500/50' : 'bg-white shadow-lg text-blue-500'}`}>
-                    <svg className={`w-8 h-8 sm:w-10 sm:h-10 ${isCyber ? 'text-cyan-500' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
-                    </svg>
+                    <CloudUpload className={`w-8 h-8 sm:w-10 sm:h-10 ${isCyber ? 'text-cyan-500' : 'text-blue-600'}`} />
                   </div>
                   <p className={`mb-2 text-sm sm:text-base font-bold uppercase tracking-wider ${isCyber ? 'text-cyan-100' : 'text-slate-700'}`}>
                     {isCyber ? '点击、拖拽或粘贴上传数据' : '点击、拖拽或粘贴上传图片'}
@@ -735,9 +749,7 @@ const App: React.FC = () => {
                           : 'bg-white border border-slate-200 text-slate-600 shadow-sm hover:shadow-md hover:text-blue-600 hover:border-blue-200'
                       }`}
                     >
-                      <svg className="w-4 h-4 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                      </svg>
+                      <Link className="w-4 h-4 opacity-70" />
                       <span>输入链接</span>
                     </button>
                   </div>
@@ -750,9 +762,7 @@ const App: React.FC = () => {
                         : 'bg-white border-slate-200 shadow-sm'
                     }`}>
                       <div className={`pl-4 flex-shrink-0 ${isCyber ? 'text-slate-600' : 'text-slate-400'}`}>
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                        </svg>
+                        <Link className="w-4 h-4" />
                       </div>
                       <input 
                         type="text"
@@ -777,10 +787,7 @@ const App: React.FC = () => {
                          }`}
                        >
                         {urlLoading ? (
-                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
+                          <Loader2 className="animate-spin h-4 w-4" />
                         ) : '确定'}
                       </button>
                     </div>
@@ -789,9 +796,7 @@ const App: React.FC = () => {
                       onClick={() => setShowUrlInput(false)}
                       className={`h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-full transition-all ${isCyber ? 'text-slate-500 hover:text-slate-300 hover:bg-slate-800' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
                     >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
+                      <X className="w-5 h-5" />
                     </button>
                   </div>
                 </div>
@@ -882,12 +887,17 @@ const App: React.FC = () => {
                 
                 <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto sm:ml-auto">
                    <div className={`text-xs font-medium hidden lg:block mr-4 ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
-                     {isCyber ? `计数: ${String(signatures.length).padStart(2, '0')}` : `已生成 ${signatures.length} 个`}
+                     <span className="inline-flex items-center gap-1">
+                       <Hash className="w-3 h-3" />
+                       {isCyber ? `计数: ${String(signatures.length).padStart(2, '0')}` : `已生成 ${signatures.length} 个`}
+                     </span>
                    </div>
                    <Button variant="secondary" onClick={handleBackToEditor} className="text-xs px-3 sm:px-4 py-2 flex-1 sm:flex-none touch-manipulation" theme={theme}>
-                    {isCyber ? '// 编辑目标' : '调整选区'}
+                     <Edit3 className="w-4 h-4 mr-1" />
+                     {isCyber ? '// 编辑目标' : '调整选区'}
                    </Button>
                    <Button onClick={handleDownloadAll} className="text-xs px-3 sm:px-4 py-2 flex-1 sm:flex-none touch-manipulation" theme={theme}>
+                     <Download className="w-4 h-4 mr-1" />
                      {isCyber ? '批量下载' : '全部保存'}
                    </Button>
                 </div>
@@ -922,7 +932,10 @@ const App: React.FC = () => {
               {signatures.length === 0 && (
                  <div className={`text-center py-16 rounded-2xl border-2 border-dashed mt-8 ${isCyber ? 'bg-slate-900/30 border-slate-800' : 'bg-white/40 border-slate-200'}`}>
                    <p className={`mb-6 text-sm ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>未生成目标数据</p>
-                   <Button variant="ghost" onClick={handleBackToEditor} theme={theme}>返回编辑器</Button>
+                   <Button variant="ghost" onClick={handleBackToEditor} theme={theme}>
+                     <ArrowLeft className="w-4 h-4 mr-1" />
+                     返回编辑器
+                   </Button>
                  </div>
               )}
             </div>
@@ -931,9 +944,7 @@ const App: React.FC = () => {
           {status === ProcessingStatus.ERROR && (
             <div className="text-center mt-24">
                <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-6 ${isCyber ? 'bg-red-900/20 text-red-500 border border-red-500/50' : 'bg-red-50 text-red-500'}`}>
-                 <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v1m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                 </svg>
+                 <AlertCircle className="w-10 h-10" />
                </div>
                <h3 className={`text-xl font-bold mb-2 ${isCyber ? 'text-red-400 font-mono uppercase tracking-widest' : 'text-slate-900'}`}>
                  {isCyber ? '系统错误' : '处理失败'}
@@ -941,7 +952,10 @@ const App: React.FC = () => {
                <p className={`mb-8 ${isCyber ? 'text-slate-500 font-mono text-sm' : 'text-slate-500'}`}>
                  {isCyber ? '处理失败，数据流已损坏。' : '抱歉，图片处理过程中出现了错误。'}
                </p>
-               <Button onClick={handleReset} variant="secondary" theme={theme}>重试连接</Button>
+               <Button onClick={handleReset} variant="secondary" theme={theme}>
+                 <RotateCcw className="w-4 h-4 mr-1" />
+                 重试连接
+               </Button>
             </div>
           )}
 
@@ -949,7 +963,7 @@ const App: React.FC = () => {
       )}
 
       {/* Footer */}
-      {status !== ProcessingStatus.EDITING && (
+      {status !== ProcessingStatus.EDITING && !lightboxOpen && (
         <footer className={`w-full py-4 sm:py-6 mt-auto z-10 relative ${isCyber ? 'border-t border-slate-800' : 'border-t border-slate-200/50'}`}>
           <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <p className={`text-center text-xs sm:text-sm ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
@@ -973,9 +987,7 @@ const App: React.FC = () => {
                 className={`p-1.5 rounded-full transition-colors ${isCyber ? 'hover:bg-slate-800 text-cyan-500' : 'hover:bg-slate-100 text-blue-500'}`}
                 title="查看配置帮助"
               >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+                <HelpCircle className="w-5 h-5" />
               </button>
             </div>
             <p className={`text-sm mb-4 ${isCyber ? 'text-slate-400' : 'text-slate-500'}`}>

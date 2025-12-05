@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button } from './Button';
 import { Theme } from '../types';
+import { X, Check } from 'lucide-react';
 
 interface AiHelpModalProps {
   onClose: () => void;
@@ -22,9 +23,7 @@ export const AiHelpModal: React.FC<AiHelpModalProps> = ({ onClose, theme }) => {
         <div className="flex items-center justify-between p-6 pb-4 shrink-0 border-b border-slate-200/10">
           <h2 className={`text-xl font-bold ${titleClass}`}>如何配置通用 AI？</h2>
           <button onClick={onClose} className="p-2 hover:bg-black/10 rounded-full transition-colors">
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="w-6 h-6" />
           </button>
         </div>
 
@@ -117,7 +116,10 @@ export const AiHelpModal: React.FC<AiHelpModalProps> = ({ onClose, theme }) => {
         </div>
 
         <div className="p-6 pt-4 border-t border-slate-200/10 flex justify-end shrink-0">
-           <Button onClick={onClose} theme={theme}>明白了</Button>
+           <Button onClick={onClose} theme={theme}>
+             <Check className="w-4 h-4 mr-1" />
+             明白了
+           </Button>
         </div>
       </div>
     </div>

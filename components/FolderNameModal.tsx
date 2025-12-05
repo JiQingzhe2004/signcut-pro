@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from './Button';
+import { X, Check } from 'lucide-react';
 import { Theme } from '../types';
 
 interface FolderNameModalProps {
@@ -76,9 +77,11 @@ export const FolderNameModal: React.FC<FolderNameModalProps> = ({
 
         <div className="p-6 pt-0 flex justify-end gap-3">
           <Button variant="ghost" onClick={onClose} theme={theme}>
+            <X className="w-4 h-4 mr-1" />
             取消
           </Button>
           <Button variant="primary" onClick={handleConfirm} theme={theme}>
+            <Check className="w-4 h-4 mr-1" />
             确认
           </Button>
         </div>
