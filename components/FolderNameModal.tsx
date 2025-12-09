@@ -54,7 +54,7 @@ export const FolderNameModal: React.FC<FolderNameModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
-      <div className={`relative w-full max-w-md flex flex-col rounded-2xl shadow-2xl overflow-hidden ${bgClass}`}>
+      <div className={`relative w-full max-w-md flex flex-col rounded-[2rem] shadow-2xl overflow-hidden animate-spring-up ${bgClass}`}>
         <div className="p-6 pb-0">
           <h2 className={`text-xl font-bold mb-2 ${titleClass}`}>保存</h2>
           <p className="text-sm opacity-70">请输入文件夹名称，我们将为您一次性打包所有签名并下载。</p>
@@ -82,7 +82,7 @@ export const FolderNameModal: React.FC<FolderNameModalProps> = ({
             <X className="w-4 h-4 mr-1" />
             取消
           </Button>
-          <Button variant="primary" onClick={handleConfirm} theme={theme}>
+          <Button variant="primary" onClick={handleConfirm} theme={theme} className="rounded-[2rem]">
             <Check className="w-4 h-4 mr-1" />
             确认
           </Button>

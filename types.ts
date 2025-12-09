@@ -3,6 +3,8 @@ export interface ProcessedSignature {
   sourceImageId?: string; // ID of the source image
   originalDataUrl: string; // The cropped raw image
   processedDataUrl: string; // The binarized 2:1 image
+  transparentDataUrl?: string;
+  svgDataUrl?: string;
   width: number;
   height: number;
   annotation?: string; // User provided remark/name

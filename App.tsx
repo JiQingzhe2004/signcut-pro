@@ -1,11 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
-import { processSignatureRegions, recommendSensitivity } from './services/imageProcessing';
+import { processSignatureRegions, recommendSensitivity, convertOpaquePngToTransparent, buildSvgDataUrlFromPng, buildCheckerboardPreview } from './services/imageProcessing';
 import { analyzeImageWithAI, getAIConfig, saveAIConfig, AIConfig } from './services/aiService';
 import { ProcessedSignature, ProcessingStatus, SelectionBox, Theme, ProcessingMode, UploadedImage } from './types';
 import { Button } from './components/Button';
 import { SignatureCard } from './components/SignatureCard';
+import { Input } from './components/Input';
+import { Slider } from './components/Slider';
+import { Select } from './components/Select';
+import { SettingsMenu } from './components/SettingsMenu';
 import { ImageEditor } from './components/ImageEditor';
 import { Logo } from './components/Logo';
 import { SignatureLightbox } from './components/SignatureLightbox';
@@ -55,6 +59,8 @@ const App: React.FC = () => {
   // Theme State
   const [theme, setTheme] = useState<Theme>('ios');
   const isCyber = theme === 'cyberpunk';
+  const [exportFormat, setExportFormat] = useState<'png-white' | 'png-transparent' | 'svg-transparent'>('png-white');
+  const [previewMap, setPreviewMap] = useState<Record<string, string>>({});
 
   // Lightbox State
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -85,6 +91,32 @@ const App: React.FC = () => {
   const [downloadTotal, setDownloadTotal] = useState(0);
 
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+
+  const urlInputRef = React.useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (showUrlInput) {
+      // Delay focus to match animation timing
+      const timer = setTimeout(() => {
+        urlInputRef.current?.focus();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [showUrlInput]);
+
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (showUrlInput) {
+        setShowUrlInput(false);
+      }
+    };
+    if (showUrlInput) {
+      document.addEventListener('click', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [showUrlInput]);
 
   const handleUrlSubmit = async () => {
     if (!urlInput) return;
@@ -137,7 +169,8 @@ const App: React.FC = () => {
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       // Allow paste in IDLE or EDITING
-      if (status !== ProcessingStatus.IDLE && status !== ProcessingStatus.EDITING) return;
+      // Use array includes to avoid TS overlap error if status type is narrowed
+      if (![ProcessingStatus.IDLE, ProcessingStatus.EDITING].includes(status)) return;
       
       const items = e.clipboardData?.items;
       if (!items) return;
@@ -381,6 +414,7 @@ const App: React.FC = () => {
       // Update state once with all results
       setSignatures(newSignatures);
       setStatus(ProcessingStatus.COMPLETED);
+      setLastProcessedSize(outputSize); // Initialize lastProcessedSize
 
     } catch (e) {
       console.error(e);
@@ -458,11 +492,58 @@ const App: React.FC = () => {
     setOutputSize(newSize);
   };
 
+  const [lastProcessedSize, setLastProcessedSize] = useState<{width: number, height: number} | null>(null);
+
   const handleOutputSizeBlur = () => {
     if (status === ProcessingStatus.COMPLETED && activeImage) {
+      // Check if size actually changed
+      if (lastProcessedSize && 
+          lastProcessedSize.width === outputSize.width && 
+          lastProcessedSize.height === outputSize.height) {
+        return;
+      }
+      
       reProcessSignatures(activeImage.sensitivity, outputSize.width, outputSize.height);
+      setLastProcessedSize(outputSize);
     }
   };
+
+  useEffect(() => {
+    if (status !== ProcessingStatus.COMPLETED) {
+      setPreviewMap({});
+      return;
+    }
+    let alive = true;
+    const gen = async () => {
+      const entries: Array<[string, string]> = [];
+      for (const sig of signatures) {
+        if (exportFormat === 'png-white') {
+          entries.push([sig.id, sig.processedDataUrl]);
+        } else if (exportFormat === 'png-transparent') {
+          const t = sig.transparentDataUrl || await convertOpaquePngToTransparent(sig.processedDataUrl);
+          const preview = await buildCheckerboardPreview(t, sig.width, sig.height);
+          entries.push([sig.id, preview]);
+          if (!sig.transparentDataUrl) {
+            setSignatures(prev => prev.map(s => s.id === sig.id ? { ...s, transparentDataUrl: t } : s));
+          }
+        } else {
+          const t = sig.transparentDataUrl || await convertOpaquePngToTransparent(sig.processedDataUrl);
+          const svg = sig.svgDataUrl || buildSvgDataUrlFromPng(t, sig.width, sig.height);
+          const preview = await buildCheckerboardPreview(t, sig.width, sig.height);
+          entries.push([sig.id, preview]);
+          if (!sig.transparentDataUrl || !sig.svgDataUrl) {
+            setSignatures(prev => prev.map(s => s.id === sig.id ? { ...s, transparentDataUrl: t, svgDataUrl: svg } : s));
+          }
+        }
+      }
+      if (!alive) return;
+      const map: Record<string, string> = {};
+      entries.forEach(([id, url]) => { map[id] = url; });
+      setPreviewMap(map);
+    };
+    gen();
+    return () => { alive = false; };
+  }, [exportFormat, signatures, status]);
 
   const handleUpdateAnnotation = (id: string, text: string) => {
     setSignatures(prev => prev.map(sig => 
@@ -486,16 +567,23 @@ const App: React.FC = () => {
       const folder = zip.folder(folderName);
       
       if (folder) {
-        signatures.forEach((sig, idx) => {
+        for (let idx = 0; idx < signatures.length; idx++) {
+          const sig = signatures[idx];
           const name = sig.annotation ? sig.annotation : `签名_${idx + 1}`;
-          const filename = `电子签名_${name}.png`;
-          
-          const base64Data = sig.processedDataUrl.split(',')[1];
+          let url = sig.processedDataUrl;
+          let ext: 'png' | 'svg' = 'png';
+          if (exportFormat === 'png-transparent') {
+            url = sig.transparentDataUrl || await convertOpaquePngToTransparent(sig.processedDataUrl);
+          } else if (exportFormat === 'svg-transparent') {
+            const t = sig.transparentDataUrl || await convertOpaquePngToTransparent(sig.processedDataUrl);
+            url = sig.svgDataUrl || buildSvgDataUrlFromPng(t, sig.width, sig.height);
+            ext = 'svg';
+          }
+          const filename = `电子签名_${name}.${ext}`;
+          const base64Data = url.split(',')[1];
           folder.file(filename, base64Data, { base64: true });
-          
-          // Update progress
           setDownloadProgress(idx + 1);
-        });
+        }
       }
 
       const content = await zip.generateAsync({ type: 'blob' });
@@ -664,54 +752,53 @@ const App: React.FC = () => {
       {status !== ProcessingStatus.EDITING && (
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto custom-scrollbar flex flex-col relative z-10 h-full w-full">
           {/* Header */}
-      {status !== ProcessingStatus.EDITING && !lightboxOpen && (
-        <header 
-          className={`${headerClass} sticky top-0 z-50 transition-transform duration-500 ease-in-out ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}
-        >
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
-            <div className="cursor-pointer group" onClick={handleReset}>
-              <Logo theme={theme} />
-            </div>
-            
-            <div className="flex items-center gap-2 sm:gap-4">
-              {/* Settings Button */}
-              <button 
-                onClick={() => setShowAiConfig(true)}
-                className={`p-2 sm:p-2.5 rounded-full transition-all touch-manipulation ${isCyber ? 'bg-slate-800 text-cyan-400 hover:bg-slate-700 active:scale-95' : 'bg-white text-slate-800 shadow-sm hover:shadow-md active:scale-95'}`}
-                title="设置 AI API"
-              >
-                <Settings className="w-5 h-5" />
-              </button>
+          {!lightboxOpen && (
+            <header 
+              className={`${headerClass} sticky top-0 z-50 transition-transform duration-500 ease-in-out ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}
+            >
+              <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
+                <div className="cursor-pointer group" onClick={handleReset}>
+                  <Logo theme={theme} />
+                </div>
+                
+                <div className="flex items-center gap-2 sm:gap-4">
+                  {/* Settings Button */}
+                  <SettingsMenu 
+                    aiConfig={aiConfig}
+                    setAiConfig={setAiConfig}
+                    onSave={saveAIConfig}
+                    theme={theme}
+                    onHelp={() => setShowAiHelp(true)}
+                  />
 
-              {/* Theme Toggle */}
-              <button 
-                onClick={toggleTheme}
-                className={`p-2 sm:p-2.5 rounded-full transition-all touch-manipulation ${isCyber ? 'bg-slate-800 text-cyan-400 hover:bg-slate-700 active:scale-95' : 'bg-white text-slate-800 shadow-sm hover:shadow-md active:scale-95'}`}
-                title="切换主题"
-              >
-                {isCyber ? (
-                  <Sun className="w-5 h-5" />
-                ) : (
-                  <Moon className="w-5 h-5" />
-                )}
-              </button>
+                  {/* Theme Toggle */}
+                  <button 
+                    onClick={toggleTheme}
+                    className={`p-2 sm:p-2.5 rounded-full transition-all touch-manipulation ${isCyber ? 'bg-slate-800 text-cyan-400 hover:bg-slate-700 active:scale-95' : 'bg-white text-slate-800 shadow-sm hover:shadow-md active:scale-95'}`}
+                    title="切换主题"
+                  >
+                    {isCyber ? (
+                      <Sun className="w-5 h-5" />
+                    ) : (
+                      <Moon className="w-5 h-5" />
+                    )}
+                  </button>
 
-              {status !== ProcessingStatus.IDLE && (
-                <Button variant="ghost" onClick={handleReset} className="text-xs px-3 py-2 touch-manipulation flex items-center gap-1" theme={theme}>
-                  <RotateCcw className="w-4 h-4" />
-                  <span className="hidden sm:inline">{isCyber ? '// 重置系统' : '重新开始'}</span>
-                  <span className="sm:hidden">{isCyber ? '重置' : '重置'}</span>
-                </Button>
-              )}
-            </div>
-          </div>
-        </header>
-      )}
+                  {status !== ProcessingStatus.IDLE && (
+                    <Button variant="ghost" onClick={handleReset} className="text-xs px-3 py-2 touch-manipulation flex items-center gap-1" theme={theme}>
+                      <RotateCcw className="w-4 h-4" />
+                      <span className="hidden sm:inline">{isCyber ? '// 重置系统' : '重新开始'}</span>
+                      <span className="sm:hidden">{isCyber ? '重置' : '重置'}</span>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </header>
+          )}
 
 
       {/* Main Content */}
-      {(status !== ProcessingStatus.EDITING) && (
-        <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-1 w-full z-10 relative">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-1 w-full z-10 relative">
         
           {/* Intro / Upload Section */}
           {status === ProcessingStatus.IDLE && (
@@ -741,14 +828,14 @@ const App: React.FC = () => {
               </p>
               
               <label 
-                className={`group relative flex flex-col items-center justify-center w-full h-56 sm:h-72 border-2 border-dashed rounded-2xl sm:rounded-3xl cursor-pointer transition-all touch-manipulation ${isCyber ? (isDragging ? 'border-cyan-400 bg-cyan-950/20 shadow-[0_0_30px_rgba(6,182,212,0.3)] scale-[1.02]' : 'border-cyan-500/30 bg-slate-900/50 active:bg-cyan-950/10 active:border-cyan-400 active:shadow-[0_0_30px_rgba(6,182,212,0.15)]') : (isDragging ? 'border-blue-500 bg-blue-50/80 shadow-xl scale-[1.02]' : 'border-slate-300 bg-white/40 active:bg-white/60 active:border-blue-400 active:shadow-xl active:scale-[1.02] backdrop-blur-sm')}`}
+                className={`group relative flex flex-col items-center justify-center w-full h-56 sm:h-72 border-2 border-dashed rounded-[2rem] sm:rounded-[2.5rem] cursor-pointer transition-all duration-200 touch-manipulation ${isCyber ? (isDragging ? 'border-cyan-400 bg-cyan-950/20 shadow-[0_0_30px_rgba(6,182,212,0.3)] scale-[1.02]' : 'border-cyan-500/30 bg-slate-900/50 hover:border-cyan-400/60 hover:bg-cyan-950/10 hover:shadow-[0_0_20px_rgba(6,182,212,0.15)] active:bg-cyan-950/20 active:border-cyan-400 active:shadow-[0_0_30px_rgba(6,182,212,0.2)]') : (isDragging ? 'border-blue-500 bg-blue-50/80 shadow-xl scale-[1.02]' : 'border-slate-300 bg-white/40 hover:border-blue-400 hover:bg-white/60 hover:shadow-lg active:bg-white/80 active:border-blue-500 active:shadow-xl active:scale-[1.02] backdrop-blur-sm')}`}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
               >
                 <div className="flex flex-col items-center justify-center pt-5 pb-6 px-4">
-                  <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center mb-4 sm:mb-6 group-active:scale-110 transition-transform ${isCyber ? 'bg-slate-800 border border-slate-700 group-active:border-cyan-500/50' : 'bg-white shadow-lg text-blue-500'}`}>
-                    <CloudUpload className={`w-8 h-8 sm:w-10 sm:h-10 ${isCyber ? 'text-cyan-500' : 'text-blue-600'}`} />
+                  <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center mb-4 sm:mb-6 transition-all duration-100 group-hover:scale-110 group-active:scale-95 ${isCyber ? 'bg-slate-800 border border-slate-700 group-hover:border-cyan-100/50 group-hover:shadow-[0_0_20px_rgba(6,182,212,0.3)]' : 'bg-white shadow-lg text-blue-500 group-hover:shadow-xl group-hover:text-blue-600'}`}>
+                    <CloudUpload className={`w-8 h-8 sm:w-10 sm:h-10 transition-colors duration-100 ${isCyber ? 'text-cyan-500 group-hover:text-cyan-400' : 'text-blue-600 group-hover:text-blue-700'}`} />
                   </div>
                   <p className={`mb-2 text-sm sm:text-base font-bold uppercase tracking-wider ${isCyber ? 'text-cyan-100' : 'text-slate-700'}`}>
                     {isCyber ? '点击、拖拽或粘贴上传数据' : '点击、拖拽或粘贴上传图片'}
@@ -759,67 +846,75 @@ const App: React.FC = () => {
               </label>
 
               {/* URL Input */}
-              <div className={`mt-8 mx-auto transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] ${showUrlInput ? 'w-full max-w-lg px-4' : 'w-44'}`}>
-                <div className="relative h-12">
+              <div className="mt-8 w-full flex justify-center">
+                <div 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!showUrlInput) setShowUrlInput(true);
+                  }}
+                  className={`
+                    relative flex overflow-hidden transition-all duration-500
+                    ${showUrlInput 
+                      ? 'shadow-2xl' 
+                      : 'shadow-sm hover:shadow-md hover:scale-105 active:scale-95 cursor-pointer items-center justify-center'
+                    }
+                    ${isCyber 
+                      ? `bg-cyan-950/20 border ${showUrlInput ? 'border-cyan-900/50' : 'border-cyan-900/50 hover:border-cyan-500/50 hover:shadow-[0_0_15px_rgba(6,182,212,0.15)]'} text-cyan-400`
+                      : `bg-white border ${showUrlInput ? 'border-slate-200' : 'border-slate-200 hover:border-blue-200 hover:text-blue-600'} text-slate-600`
+                    }
+                  `}
+                  style={{
+                    width: showUrlInput ? '100%' : '11rem',
+                    height: '3rem', // Fixed height
+                    borderRadius: '1.5rem',
+                    transitionTimingFunction: 'cubic-bezier(0.34, 1.25, 0.64, 1)'
+                  }}
+                >
                   {/* Button State */}
-                  <div className={`absolute inset-0 w-full h-full transition-all duration-300 ${showUrlInput ? 'opacity-0 scale-90 pointer-events-none' : 'opacity-100 scale-100'}`}>
-                    <button 
-                      onClick={() => setShowUrlInput(true)} 
-                      className={`group w-full h-full flex items-center justify-center gap-2 rounded-full text-sm font-medium transition-all duration-300 ${
-                        isCyber
-                          ? 'bg-cyan-950/20 border border-cyan-900/50 text-cyan-400 hover:bg-cyan-950/40 hover:border-cyan-500/50 hover:shadow-[0_0_15px_rgba(6,182,212,0.15)]'
-                          : 'bg-white border border-slate-200 text-slate-600 shadow-sm hover:shadow-md hover:text-blue-600 hover:border-blue-200'
-                      }`}
-                    >
+                  <div className={`
+                    absolute inset-0 flex items-center justify-center gap-2 transition-all duration-300
+                    ${showUrlInput ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100'}
+                  `}>
                       <Link className="w-4 h-4 opacity-70" />
-                      <span>输入链接</span>
-                    </button>
+                      <span className="text-sm font-medium">输入链接</span>
                   </div>
 
                   {/* Input State */}
-                  <div className={`absolute inset-0 w-full h-full flex items-center gap-3 transition-all duration-500 delay-75 ${showUrlInput ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}>
-                    <div className={`flex-1 h-full flex items-center rounded-full overflow-hidden border transition-colors ${
-                      isCyber 
-                        ? 'bg-slate-900/80 border-slate-700 shadow-inner' 
-                        : 'bg-white border-slate-200 shadow-sm'
-                    }`}>
-                      <div className={`pl-4 flex-shrink-0 ${isCyber ? 'text-slate-600' : 'text-slate-400'}`}>
+                  <div className={`
+                    absolute inset-0 w-full h-full flex items-center gap-2 px-2 transition-all duration-300 delay-75
+                    ${showUrlInput ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}
+                  `}>
+                      <div className={`pl-2 flex-shrink-0 ${isCyber ? 'text-slate-600' : 'text-slate-400'}`}>
                         <Link className="w-4 h-4" />
                       </div>
                       <input 
+                        ref={urlInputRef}
                         type="text"
                         value={urlInput}
                         onChange={(e) => setUrlInput(e.target.value)}
                         placeholder="https://example.com/image.png"
-                        className={`flex-1 h-full bg-transparent border-none outline-none px-3 text-sm ${
+                        className={`flex-1 h-full bg-transparent border-none outline-none px-2 text-sm ${
                           isCyber
                             ? 'text-white placeholder-slate-600'
                             : 'text-slate-800 placeholder-slate-400'
                         }`}
                         onKeyDown={(e) => e.key === 'Enter' && handleUrlSubmit()}
                         autoFocus={showUrlInput}
+                        onClick={(e) => e.stopPropagation()}
                       />
                       <button 
-                         onClick={handleUrlSubmit}
+                         onClick={(e) => { e.stopPropagation(); handleUrlSubmit(); }}
                          disabled={urlLoading}
-                         className={`h-full px-6 flex items-center justify-center text-sm font-medium transition-all whitespace-nowrap ${
+                         className={`h-8 px-4 rounded-full flex items-center justify-center text-xs font-medium transition-all whitespace-nowrap ${
                            isCyber
-                             ? 'bg-cyan-950/40 text-cyan-400 hover:bg-cyan-500 hover:text-black border-l border-slate-700'
-                             : 'bg-black text-white hover:bg-gray-800'
+                             ? 'bg-cyan-900/50 text-cyan-400 hover:bg-cyan-500 hover:text-black'
+                             : 'bg-slate-900 text-white hover:bg-slate-700'
                          }`}
                        >
                         {urlLoading ? (
-                          <Loader2 className="animate-spin h-4 w-4" />
+                          <Loader2 className="animate-spin h-3 w-3" />
                         ) : '确定'}
                       </button>
-                    </div>
-                    
-                    <button 
-                      onClick={() => setShowUrlInput(false)}
-                      className={`h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-full transition-all ${isCyber ? 'text-slate-500 hover:text-slate-300 hover:bg-slate-800' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
                   </div>
                 </div>
               </div>
@@ -850,25 +945,25 @@ const App: React.FC = () => {
           {status === ProcessingStatus.COMPLETED && (
             <div className="animate-fade-in">
               {/* Controls Toolbar */}
-              <div className={`${toolbarClass} p-4 sm:p-5 mb-6 sm:mb-10 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-4 sm:gap-6 sticky z-20 transition-all duration-500 ease-in-out ${showHeader ? 'top-20 sm:top-28' : 'top-4 sm:top-6'}`}>
+              <div className={`${toolbarClass} p-4 sm:p-5 mb-6 sm:mb-10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 sm:gap-6 sticky z-20 transition-all duration-500 ease-in-out ${showHeader ? 'top-20 sm:top-28' : 'top-4 sm:top-6'}`}>
                 
-                <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-4 sm:gap-8 w-full sm:w-auto">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 sm:gap-8 w-full sm:w-auto overflow-x-auto scrollbar-hide">
                   {/* Sensitivity Control (Hidden in AI mode) */}
                   {processingMode !== 'ai' && (
-                    <div className="flex items-center gap-3 sm:gap-4 flex-1 sm:flex-none">
+                    <div className="flex items-center gap-3 sm:gap-4 flex-none">
                       <span className={`text-xs font-bold uppercase whitespace-nowrap ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
                         提取阈值
                       </span>
-                      <div className="flex items-center gap-2 sm:gap-3 flex-1 sm:flex-none">
-                        <input 
-                          type="range" 
+                      <div className="flex items-center gap-2 sm:gap-3 flex-none">
+                        <Slider 
                           min="5" 
                           max="40" 
                           value={sensitivity} 
                           onChange={handleSensitivityChange}
-                          className={`flex-1 sm:w-32 h-2 sm:h-1.5 rounded-lg appearance-none cursor-pointer touch-manipulation ${isCyber ? 'bg-slate-700 accent-cyan-500' : 'bg-slate-200 accent-blue-500'}`}
+                          theme={theme}
+                          className="w-24 sm:w-32"
                         />
-                        <span className={`text-xs px-2.5 py-1 rounded font-medium min-w-[30px] text-center ${isCyber ? 'bg-slate-800 border border-slate-700 text-cyan-400 font-mono' : 'bg-white shadow-sm text-slate-600 font-sans'}`}>
+                        <span className={`text-xs w-7 h-7 flex items-center justify-center rounded-full font-medium ${isCyber ? 'bg-slate-800 border border-slate-700 text-cyan-400 font-mono' : 'bg-white shadow-sm text-slate-600 font-sans'}`}>
                           {sensitivity}
                         </span>
                       </div>
@@ -877,51 +972,49 @@ const App: React.FC = () => {
                   
 
                   {/* Dimension Control */}
-                  <div className={`flex items-center gap-3 sm:gap-4 ${isCyber ? 'sm:border-l border-slate-800 sm:pl-8' : 'sm:border-l border-slate-200 sm:pl-8'}`}>
+                  <div className={`flex items-center gap-3 sm:gap-4 flex-none ${isCyber ? 'sm:border-l border-slate-800 sm:pl-8' : 'sm:border-l border-slate-200 sm:pl-8'}`}>
                     <span className={`text-xs font-bold uppercase whitespace-nowrap ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
                       {isCyber ? '分辨率矩阵' : '输出尺寸'}
                     </span>
                     <div className="flex items-center gap-2 text-sm">
-                      <div className="flex items-center gap-1 sm:gap-2">
-                        <span className={`text-[10px] ${isCyber ? 'text-slate-600 font-mono' : 'text-slate-400'}`}>宽</span>
-                        <input 
-                          type="number" 
-                          value={outputSize.width}
-                          onChange={(e) => handleOutputSizeChange('width', e.target.value)}
-                          onBlur={handleOutputSizeBlur}
-                          className={`w-16 sm:w-20 px-2 sm:px-3 py-1.5 rounded-lg text-center text-xs focus:outline-none focus:ring-2 transition-all touch-manipulation ${isCyber ? 'bg-slate-950 border border-slate-700 text-cyan-50 focus:border-cyan-500 font-mono' : 'bg-slate-100 border-transparent text-slate-800 focus:bg-white focus:shadow-sm font-sans'}`}
-                        />
-                      </div>
+                      <Input
+                        type="number"
+                        value={outputSize.width}
+                        onChange={(e) => handleOutputSizeChange('width', e.target.value)}
+                        onBlur={handleOutputSizeBlur}
+                        labelPrefix="宽"
+                        theme={theme}
+                        className="w-16 sm:w-20"
+                      />
                       <span className="text-slate-400">×</span>
-                      <div className="flex items-center gap-1 sm:gap-2">
-                        <span className={`text-[10px] ${isCyber ? 'text-slate-600 font-mono' : 'text-slate-400'}`}>高</span>
-                        <input 
-                          type="number" 
-                          value={outputSize.height}
-                          onChange={(e) => handleOutputSizeChange('height', e.target.value)}
-                          onBlur={handleOutputSizeBlur}
-                          className={`w-16 sm:w-20 px-2 sm:px-3 py-1.5 rounded-lg text-center text-xs focus:outline-none focus:ring-2 transition-all touch-manipulation ${isCyber ? 'bg-slate-950 border border-slate-700 text-cyan-50 focus:border-cyan-500 font-mono' : 'bg-slate-100 border-transparent text-slate-800 focus:bg-white focus:shadow-sm font-sans'}`}
-                        />
-                      </div>
+                      <Input
+                        type="number"
+                        value={outputSize.height}
+                        onChange={(e) => handleOutputSizeChange('height', e.target.value)}
+                        onBlur={handleOutputSizeBlur}
+                        labelPrefix="高"
+                        theme={theme}
+                        className="w-16 sm:w-20"
+                      />
                     </div>
                   </div>
                 </div>
                 
-                <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto sm:ml-auto">
-                   <div className={`text-xs font-medium hidden lg:block mr-4 ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
-                     <span className="inline-flex items-center gap-1">
-                       <Hash className="w-3 h-3" />
-                       {isCyber ? `计数: ${String(signatures.length).padStart(2, '0')}` : `已生成 ${signatures.length} 个`}
-                     </span>
-                   </div>
-                   <Button variant="secondary" onClick={handleBackToEditor} className="text-xs px-3 sm:px-4 py-2 flex-1 sm:flex-none touch-manipulation" theme={theme}>
-                     <Edit3 className="w-4 h-4 mr-1" />
-                     {isCyber ? '// 编辑目标' : '调整选区'}
-                   </Button>
-                   <Button onClick={handleDownloadAll} className="text-xs px-3 sm:px-4 py-2 flex-1 sm:flex-none touch-manipulation" theme={theme}>
-                     <Download className="w-4 h-4 mr-1" />
-                     {isCyber ? '批量下载' : '全部保存'}
-                   </Button>
+                <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto sm:ml-auto flex-none">
+                  <div className={`text-xs font-medium hidden lg:block mr-4 ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
+                    <span className="inline-flex items-center gap-1">
+                      <Hash className="w-3 h-3" />
+                      {isCyber ? `计数: ${String(signatures.length).padStart(2, '0')}` : `已生成 ${signatures.length} 个`}
+                    </span>
+                  </div>
+                  <Button variant="secondary" onClick={handleBackToEditor} className="text-xs px-3 sm:px-4 py-2 flex-1 sm:flex-none touch-manipulation" theme={theme}>
+                    <Edit3 className="w-4 h-4 mr-1" />
+                    {isCyber ? '// 编辑目标' : '调整选区'}
+                  </Button>
+                  <Button onClick={handleDownloadAll} className="text-xs px-3 sm:px-4 py-2 flex-1 sm:flex-none touch-manipulation rounded-[2rem]" theme={theme}>
+                    <Download className="w-4 h-4 mr-1" />
+                    {isCyber ? '批量下载' : '全部保存'}
+                  </Button>
                 </div>
               </div>
 
@@ -929,7 +1022,7 @@ const App: React.FC = () => {
                 {signatures.map((sig, idx) => (
                   <SignatureCard 
                     key={sig.id} 
-                    signature={sig} 
+                    signature={{ ...sig, processedDataUrl: previewMap[sig.id] || sig.processedDataUrl }} 
                     index={idx} 
                     onUpdateAnnotation={handleUpdateAnnotation}
                     onPreview={(index) => {
@@ -982,10 +1075,9 @@ const App: React.FC = () => {
           )}
 
         </main>
-      )}
-
+      
       {/* Footer */}
-      {status !== ProcessingStatus.EDITING && !lightboxOpen && (
+      {!lightboxOpen && (
         <footer className={`w-full py-4 sm:py-6 mt-auto z-10 relative ${isCyber ? 'border-t border-slate-800' : 'border-t border-slate-200/50'}`}>
           <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <p className={`text-center text-xs sm:text-sm ${isCyber ? 'text-slate-500 font-mono' : 'text-slate-400 font-sans'}`}>
@@ -1083,6 +1175,28 @@ const App: React.FC = () => {
         total={downloadTotal}
         theme={theme}
       />
+
+      {/* Floating Export Format Button */}
+      {status === ProcessingStatus.COMPLETED && (
+        <div 
+          className="fixed bottom-6 right-6 z-[9999] pointer-events-auto" 
+          style={{ position: 'fixed', bottom: '24px', right: '24px' }}
+        >
+           <Select
+              value={exportFormat}
+              onChange={(value) => setExportFormat(value as any)}
+              options={[
+                { value: 'png-white', label: 'PNG 白底' },
+                { value: 'png-transparent', label: 'PNG 透明' },
+                { value: 'svg-transparent', label: 'SVG 透明' }
+              ]}
+              theme={theme}
+              variant="fab"
+              direction="up"
+              icon={<ImageIcon className="w-5 h-5" />}
+            />
+        </div>
+      )}
     </div>
   );
 };

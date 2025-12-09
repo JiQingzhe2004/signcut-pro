@@ -14,6 +14,86 @@ const calculateBrightness = (gray: any, cv: any): number => {
   return brightness;
 };
 
+export const convertOpaquePngToTransparent = async (opaqueDataUrl: string): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(opaqueDataUrl);
+        return;
+      }
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const gray = (r + g + b) / 3;
+        const alpha = 255 - gray;
+        data[i] = 0;
+        data[i + 1] = 0;
+        data[i + 2] = 0;
+        data[i + 3] = Math.max(0, Math.min(255, alpha));
+      }
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.putImageData(imageData, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(opaqueDataUrl);
+    img.src = opaqueDataUrl;
+  });
+};
+
+export const buildSvgDataUrlFromPng = (pngDataUrl: string, width: number, height: number): string => {
+  const svg = `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><image width="${width}" height="${height}" href="${pngDataUrl}"/></svg>`;
+  const base64 = typeof window !== 'undefined' ? window.btoa(unescape(encodeURIComponent(svg))) : Buffer.from(svg, 'utf-8').toString('base64');
+  return `data:image/svg+xml;base64,${base64}`;
+};
+
+export const buildCheckerboardPreview = async (
+  transparentPngDataUrl: string,
+  width: number,
+  height: number,
+  squareSize: number = 16
+): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(transparentPngDataUrl);
+        return;
+      }
+
+      // Draw checkerboard
+      const cols = Math.ceil(width / squareSize);
+      const rows = Math.ceil(height / squareSize);
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const isDark = (x + y) % 2 === 0;
+          ctx.fillStyle = isDark ? '#e5e7eb' : '#ffffff';
+          ctx.fillRect(x * squareSize, y * squareSize, squareSize, squareSize);
+        }
+      }
+
+      // Draw transparent PNG on top, centered at given size
+      // Fit exactly width x height (they are already target size in our pipeline)
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(transparentPngDataUrl);
+    img.src = transparentPngDataUrl;
+  });
+};
+
 /**
  * Helper: Estimate stroke width from contours
  */
