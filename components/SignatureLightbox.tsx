@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ProcessedSignature, Theme } from '../types';
 import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 
@@ -23,6 +23,9 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const thumbnailScrollRef = useRef<HTMLDivElement>(null);
+  const [showLeftArrow, setShowLeftArrow] = useState(false);
+  const [showRightArrow, setShowRightArrow] = useState(false);
 
   useEffect(() => {
     setActiveIndex(currentIndex);
@@ -143,6 +146,85 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
 
   const handleMouseUp = () => {
     setIsDragging(false);
+  };
+
+  // Check if thumbnail scroll is needed and auto-scroll to active image
+  useEffect(() => {
+    const checkScroll = () => {
+      if (thumbnailScrollRef.current) {
+        const { scrollLeft, scrollWidth, clientWidth } = thumbnailScrollRef.current;
+        const isScrollable = scrollWidth > clientWidth;
+        setShowLeftArrow(isScrollable && scrollLeft > 0);
+        setShowRightArrow(isScrollable && scrollLeft < scrollWidth - clientWidth - 10);
+      }
+    };
+
+    // Use a small delay to ensure DOM is fully rendered
+    const timer = setTimeout(checkScroll, 100);
+    const scrollElement = thumbnailScrollRef.current;
+    if (scrollElement) {
+      scrollElement.addEventListener('scroll', checkScroll);
+      window.addEventListener('resize', checkScroll);
+      return () => {
+        clearTimeout(timer);
+        scrollElement.removeEventListener('scroll', checkScroll);
+        window.removeEventListener('resize', checkScroll);
+      };
+    }
+    return () => clearTimeout(timer);
+  }, [signatures.length, isOpen]);
+
+  // Auto-scroll to active thumbnail
+  useEffect(() => {
+    if (thumbnailScrollRef.current) {
+      const activeButton = thumbnailScrollRef.current.querySelector(`button:nth-child(${activeIndex + 1})`);
+      if (activeButton) {
+        const { scrollLeft, clientWidth, scrollWidth } = thumbnailScrollRef.current;
+        const { offsetLeft, offsetWidth } = activeButton as HTMLElement;
+        
+        // If it's the last image, scroll to show it on the right
+        if (activeIndex === signatures.length - 1) {
+          thumbnailScrollRef.current.scrollTo({
+            left: scrollWidth - clientWidth,
+            behavior: 'smooth'
+          });
+        } else if (offsetLeft < scrollLeft) {
+          // If image is off the left, scroll left
+          thumbnailScrollRef.current.scrollTo({
+            left: Math.max(0, offsetLeft - 16),
+            behavior: 'smooth'
+          });
+        } else if (offsetLeft + offsetWidth > scrollLeft + clientWidth) {
+          // If image is off the right, scroll right
+          thumbnailScrollRef.current.scrollTo({
+            left: offsetLeft + offsetWidth - clientWidth + 16,
+            behavior: 'smooth'
+          });
+        }
+        
+        // Update arrow visibility after scroll
+        setTimeout(() => {
+          if (thumbnailScrollRef.current) {
+            const { scrollLeft, scrollWidth, clientWidth } = thumbnailScrollRef.current;
+            const isScrollable = scrollWidth > clientWidth;
+            setShowLeftArrow(isScrollable && scrollLeft > 0);
+            setShowRightArrow(isScrollable && scrollLeft < scrollWidth - clientWidth - 10);
+          }
+        }, 100);
+      }
+    }
+  }, [activeIndex, signatures.length]);
+
+  // Scroll thumbnail strip
+  const scrollThumbnails = (direction: 'left' | 'right') => {
+    if (thumbnailScrollRef.current) {
+      const scrollAmount = 200;
+      const newScrollLeft = thumbnailScrollRef.current.scrollLeft + (direction === 'left' ? -scrollAmount : scrollAmount);
+      thumbnailScrollRef.current.scrollTo({
+        left: newScrollLeft,
+        behavior: 'smooth'
+      });
+    }
   };
 
   if (!isOpen || signatures.length === 0) return null;
@@ -341,7 +423,7 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
 
         {/* Thumbnail Strip (if multiple signatures) - Fixed at bottom */}
         {signatures.length > 1 && (
-          <div className="absolute bottom-8 sm:bottom-12 left-1/2 -translate-x-1/2 w-full max-w-4xl">
+          <div className="absolute bottom-8 sm:bottom-12 left-1/2 -translate-x-1/2 w-full max-w-4xl px-2 sm:px-0">
             <style>{`
               .thumbnail-scroll::-webkit-scrollbar {
                 display: none;
@@ -351,41 +433,88 @@ export const SignatureLightbox: React.FC<SignatureLightboxProps> = ({
                 scrollbar-width: none;
               }
             `}</style>
-            <div className="flex gap-2 sm:gap-3 justify-center px-2 overflow-x-auto thumbnail-scroll items-center py-2 sm:py-3">
-              {signatures.map((sig, idx) => (
-                <button
-                  key={sig.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveIndex(idx);
-                  }}
-                  className={`relative flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 rounded-lg transition-all duration-300 touch-manipulation ${
-                    idx === activeIndex
-                      ? isCyber
-                        ? 'ring-2 ring-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.5)] scale-110'
-                        : 'ring-2 ring-blue-500 shadow-lg scale-110'
-                      : isCyber
-                        ? 'opacity-60 hover:opacity-80 border border-cyan-500/20'
-                        : 'opacity-60 hover:opacity-80 border border-slate-200'
-                  }`}
-                  style={{
-                    overflow: idx === activeIndex ? 'visible' : 'hidden',
-                  }}
+            <div className="relative flex items-center justify-center">
+              {/* Thumbnail Container with rounded corners */}
+              <div 
+                className="relative rounded-2xl overflow-hidden flex-1"
+              >
+                {/* Left Arrow - on border */}
+                {showLeftArrow && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      scrollThumbnails('left');
+                    }}
+                    className={`absolute left-2 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full transition-all duration-300 ${
+                      isCyber
+                        ? 'bg-slate-900/90 hover:bg-slate-800 text-cyan-400 border border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.4)]'
+                        : 'bg-white/90 hover:bg-white text-slate-800 border border-slate-300 shadow-lg'
+                    }`}
+                    title="向左滚动"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                )}
+
+                {/* Thumbnail Container */}
+                <div 
+                  ref={thumbnailScrollRef}
+                  className="flex gap-2 sm:gap-3 px-8 sm:px-12 overflow-x-auto thumbnail-scroll items-center py-2 sm:py-3"
                 >
-                  <div className="w-full h-full rounded-lg overflow-hidden">
-                    <img
-                      src={sig.processedDataUrl}
-                      alt={sig.annotation || `签名 ${idx + 1}`}
-                      className="w-full h-full object-cover"
-                    />
-                    {idx === activeIndex && (
-                      <div className={`absolute inset-0 ${
-                        isCyber ? 'bg-cyan-400/20' : 'bg-blue-500/20'
-                      }`}></div>
-                    )}
-                  </div>
-                </button>
-              ))}
+                  {signatures.map((sig, idx) => (
+                    <button
+                      key={sig.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveIndex(idx);
+                      }}
+                      className={`relative flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 rounded-lg transition-all duration-300 touch-manipulation ${
+                        idx === activeIndex
+                          ? isCyber
+                            ? 'ring-2 ring-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.5)] scale-110'
+                            : 'ring-2 ring-blue-500 shadow-lg scale-110'
+                          : isCyber
+                            ? 'opacity-60 hover:opacity-80 border border-cyan-500/20'
+                            : 'opacity-60 hover:opacity-80 border border-slate-200'
+                      }`}
+                      style={{
+                        overflow: idx === activeIndex ? 'visible' : 'hidden',
+                      }}
+                    >
+                      <div className="w-full h-full rounded-lg overflow-hidden">
+                        <img
+                          src={sig.processedDataUrl}
+                          alt={sig.annotation || `签名 ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        {idx === activeIndex && (
+                          <div className={`absolute inset-0 ${
+                            isCyber ? 'bg-cyan-400/20' : 'bg-blue-500/20'
+                          }`}></div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Right Arrow - on border */}
+                {showRightArrow && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      scrollThumbnails('right');
+                    }}
+                    className={`absolute right-2 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full transition-all duration-300 ${
+                      isCyber
+                        ? 'bg-slate-900/90 hover:bg-slate-800 text-cyan-400 border border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.4)]'
+                        : 'bg-white/90 hover:bg-white text-slate-800 border border-slate-300 shadow-lg'
+                    }`}
+                    title="向右滚动"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}

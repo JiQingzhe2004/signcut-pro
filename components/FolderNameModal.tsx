@@ -15,16 +15,16 @@ export const FolderNameModal: React.FC<FolderNameModalProps> = ({
   isOpen, 
   onClose, 
   onConfirm, 
-  initialValue,
+  initialValue = '签名文件',
   theme 
 }) => {
-  const [value, setValue] = useState(initialValue);
+  const [value, setValue] = useState<string>(initialValue);
   const isCyber = theme === 'cyberpunk';
   
   // Reset value when modal opens
   useEffect(() => {
     if (isOpen) {
-      setValue(initialValue);
+      setValue(initialValue || '签名文件');
     }
   }, [isOpen, initialValue]);
 
@@ -37,8 +37,10 @@ export const FolderNameModal: React.FC<FolderNameModalProps> = ({
     : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-blue-500 placeholder-slate-400';
 
   const handleConfirm = () => {
-    if (value.trim()) {
-      onConfirm(value.trim());
+    const trimmedValue = (value || '签名文件').trim();
+    if (trimmedValue) {
+      onConfirm(trimmedValue);
+      onClose();
     }
   };
 

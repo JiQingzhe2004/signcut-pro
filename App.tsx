@@ -11,6 +11,7 @@ import { Logo } from './components/Logo';
 import { SignatureLightbox } from './components/SignatureLightbox';
 import { AiHelpModal } from './components/AiHelpModal';
 import { FolderNameModal } from './components/FolderNameModal';
+import { DownloadProgress } from './components/DownloadProgress';
   import { 
     Trash2, 
     Upload, 
@@ -77,6 +78,11 @@ const App: React.FC = () => {
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [urlLoading, setUrlLoading] = useState(false);
+
+  // Batch Download Progress State
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadTotal, setDownloadTotal] = useState(0);
 
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
 
@@ -471,6 +477,9 @@ const App: React.FC = () => {
 
   const handleConfirmDownload = async (folderName: string) => {
     setShowFolderModal(false);
+    setIsDownloading(true);
+    setDownloadTotal(signatures.length);
+    setDownloadProgress(0);
     
     try {
       const zip = new JSZip();
@@ -483,14 +492,27 @@ const App: React.FC = () => {
           
           const base64Data = sig.processedDataUrl.split(',')[1];
           folder.file(filename, base64Data, { base64: true });
+          
+          // Update progress
+          setDownloadProgress(idx + 1);
         });
       }
 
       const content = await zip.generateAsync({ type: 'blob' });
       saveAs(content, `${folderName}.zip`);
+      
+      // Reset progress after a short delay
+      setTimeout(() => {
+        setIsDownloading(false);
+        setDownloadProgress(0);
+        setDownloadTotal(0);
+      }, 500);
     } catch (error) {
       console.error("Failed to zip files:", error);
       alert("打包失败，请重试");
+      setIsDownloading(false);
+      setDownloadProgress(0);
+      setDownloadTotal(0);
     }
   };
 
@@ -1051,6 +1073,14 @@ const App: React.FC = () => {
         isOpen={showFolderModal}
         onClose={() => setShowFolderModal(false)}
         onConfirm={handleConfirmDownload}
+        theme={theme}
+      />
+
+      {/* Download Progress Modal */}
+      <DownloadProgress
+        isDownloading={isDownloading}
+        progress={downloadProgress}
+        total={downloadTotal}
         theme={theme}
       />
     </div>
